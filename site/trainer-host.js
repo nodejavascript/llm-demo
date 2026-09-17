@@ -7,7 +7,7 @@
  * so that a "stop" message is always answered promptly.
  */
 
-import { Trainer, buildVocab, encode, preset, parameterCount } from './llm.js';
+import { Trainer, buildVocab, encode, preset, parameterCount } from './llm.js?v=2';
 
 const SLICE_MS = 40;
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
