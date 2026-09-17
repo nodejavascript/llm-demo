@@ -1,0 +1,15 @@
+{
+  "name": "llm-demo",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Train a small language model, from scratch, in the browser. Static site for llm-demo.nodejavascript.com",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "bench": "node tools/bench.js",
+    "serve": "node tools/serve.js"
+  },
+  "engines": {
+    "node": "22"
+  }
+}

@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="llm-demo">
+  <rect width="32" height="32" rx="7" fill="#08050d"/>
+  <g stroke="#a78bfa" stroke-width="1.7" fill="none">
+    <path d="M8.6 11.5 13.4 15M8.6 20.5 13.4 17M18.6 15 23.5 11.6M18.6 17 23.5 20.4"/>
+  </g>
+  <g fill="#a78bfa">
+    <circle cx="6" cy="10" r="3"/><circle cx="6" cy="22" r="3"/>
+    <circle cx="26" cy="10" r="3"/><circle cx="26" cy="22" r="3"/>
+  </g>
+  <circle cx="16" cy="16" r="3.4" fill="#fbbf24"/>
+</svg>
