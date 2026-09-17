@@ -31,11 +31,22 @@ demonstrates the mechanism, not the scale, and the page says so.
 ## Working on it
 
 ```bash
-npm test                       # 37 tests: gradients, training, sampling, page guards
+npm test                       # 38 tests: gradients, training, sampling, page guards
 node tools/bench.js            # what each preset really costs, with samples
 node tools/serve.js            # http://127.0.0.1:4320/
 python3 tools/make-icons.py    # after changing the mark
 ```
+
+## 🔴 Bump the `?v=` token whenever you change anything
+
+Assets are addressed as `./llm.js?v=2` — **including the imports inside `app.js`,
+`trainer-host.js` and the `new Worker(...)` call**, not just the `<script>` tag.
+Cloudflare holds assets at the edge and in the browser for four hours whatever the
+server sends, so a deploy with an unchanged token is invisible to anyone who has
+already visited; that is exactly what happened on this site's first deploy, where
+the page loaded the old `llm.js` and showed preset times that had already been
+corrected. A test fails if any asset is loaded without a token or if two assets
+carry different ones.
 
 `npm test` includes a numerical gradient check of every parameter array against
 the analytic gradients. It is the test that makes the hand-derived backprop
