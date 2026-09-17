@@ -1,0 +1,360 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Train a language model in your browser | llm-demo</title>
+    <meta
+      name="description"
+      content="A small GPT written from scratch in JavaScript: tokenizer, self-attention, backpropagation, AdamW. Paste text, train it in your browser, test it."
+    />
+    <link rel="canonical" href="https://llm-demo.nodejavascript.com/" />
+    <meta name="theme-color" content="#0b0714" />
+    <meta name="color-scheme" content="dark" />
+
+    <link rel="icon" href="/favicon.ico" sizes="any" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="llm-demo" />
+    <meta property="og:title" content="Train a language model in your browser" />
+    <meta
+      property="og:description"
+      content="A small GPT written from scratch in JavaScript. Paste text, train it in front of you, then test the model you just made."
+    />
+    <meta property="og:url" content="https://llm-demo.nodejavascript.com/" />
+    <meta property="og:image" content="https://llm-demo.nodejavascript.com/og.png" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Train a language model in your browser" />
+    <meta
+      name="twitter:description"
+      content="A small GPT written from scratch in JavaScript. Paste text, train it in front of you, then test the model you just made."
+    />
+    <meta name="twitter:image" content="https://llm-demo.nodejavascript.com/og.png" />
+
+    <link rel="stylesheet" href="./styles.css?v=1" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@graph": [
+          {
+            "@type": "WebApplication",
+            "name": "llm-demo — train a language model in your browser",
+            "url": "https://llm-demo.nodejavascript.com/",
+            "applicationCategory": "DeveloperApplication",
+            "operatingSystem": "Any browser",
+            "browserRequirements": "JavaScript, Web Workers",
+            "description": "A small transformer language model written from scratch in JavaScript. It trains on text you paste, in your browser, and can then be sampled from.",
+            "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CAD" },
+            "isAccessibleForFree": true
+          },
+          {
+            "@type": "FAQPage",
+            "mainEntity": [
+              {
+                "@type": "Question",
+                "name": "Is this a real language model?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. It is a transformer with token and position embeddings, causal multi-head self-attention, a feed-forward block, layer norms and residual connections, trained by backpropagation with AdamW. It is small — thousands to hundreds of thousands of parameters — and it trains in your browser on one CPU core in seconds."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Does the text I paste get uploaded?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "No. The text is trained on inside a Web Worker on your own machine. There is no server-side model, no API key, and no request carrying your text. The page carries Google Analytics, which records anonymous page, click and scroll events only."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Why is the model so small?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Because one browser tab on one CPU core is the budget. A frontier model is trained on thousands of accelerators for months. This demonstrates the mechanism — tokenisation, attention, backpropagation, optimisation, sampling — and not the scale, and the page says so rather than pretending otherwise."
+                }
+              },
+              {
+                "@type": "Question",
+                "name": "Can I keep the model I trained?",
+                "acceptedAnswer": {
+                  "@type": "Answer",
+                  "text": "Yes. The weights download as plain JSON, with the vocabulary and the exact configuration, and a training report with the loss curve can be downloaded beside it."
+                }
+              }
+            ]
+          }
+        ]
+      }
+    </script>
+
+    <script>
+      // Owner opt-out: ?ga=off stops this browser being counted, ?ga=on undoes it.
+      (function () {
+        var params = new URLSearchParams(location.search);
+        try {
+          if (params.get('ga') === 'off') localStorage.setItem('ga_opt_out', '1');
+          if (params.get('ga') === 'on') localStorage.removeItem('ga_opt_out');
+          if (localStorage.getItem('ga_opt_out') === '1') window['ga-disable-G-K9D55KQ38J'] = true;
+        } catch (e) {
+          /* storage blocked — the site works either way */
+        }
+      })();
+    </script>
+    <script async src="https://www.googletagmanager.com/gtag/js?id=G-K9D55KQ38J"></script>
+    <script>
+      window.dataLayer = window.dataLayer || [];
+      function gtag() {
+        window.dataLayer.push(arguments);
+      }
+      gtag('js', new Date());
+      window.LLM_DEMO_GA_ID = 'G-K9D55KQ38J';
+    </script>
+    <script type="module" src="./app.js?v=1"></script>
+  </head>
+
+  <body>
+    <a class="skip" href="#step-1">Skip to the demo</a>
+
+    <header class="top">
+      <a class="brand" href="https://nodejavascript.com/">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="26" height="26">
+            <g fill="none" stroke="currentColor" stroke-width="1.7">
+              <circle cx="6" cy="10" r="3" />
+              <circle cx="6" cy="22" r="3" />
+              <circle cx="16" cy="16" r="3" />
+              <circle cx="26" cy="10" r="3" />
+              <circle cx="26" cy="22" r="3" />
+              <path d="M8.6 11.5 13.4 15M8.6 20.5 13.4 17M18.6 15 23.5 11.6M18.6 17 23.5 20.4" />
+            </g>
+          </svg>
+        </span>
+        <span>
+          <b>llm-demo</b>
+          <small>nodejavascript.com</small>
+        </span>
+      </a>
+      <nav>
+        <a href="#how">How it works</a>
+        <a href="#honesty">What it is not</a>
+        <a href="./llm.js">The source</a>
+      </nav>
+    </header>
+
+    <main>
+      <section class="hero">
+        <h1>Train a language model in your browser</h1>
+        <p class="lede">
+          A small GPT — tokenizer, self-attention, backpropagation and AdamW — written from scratch in plain
+          JavaScript. No framework, no build step, no server, no API key. Paste some text, press one button, watch
+          the loss fall, then test the model you just made.
+        </p>
+        <ul class="facts">
+          <li><b>Nothing you type leaves this page.</b> It trains in a Web Worker on your own machine.</li>
+          <li><b>Seconds, not hours.</b> About twelve thousand parameters in about fifteen seconds.</li>
+          <li><b>The whole model is one readable file.</b> <a href="./llm.js">llm.js</a> — read it.</li>
+        </ul>
+      </section>
+
+      <section class="card" id="step-1">
+        <h2><span class="step">1</span> Give it something to learn</h2>
+        <p class="sub">
+          A small model learns whatever regularity is in front of it. Small and highly structured works best: a list
+          of names, a list of products, a script with repeated turns.
+        </p>
+        <div class="chips" id="corpusButtons" role="group" aria-label="Choose a text to train on"></div>
+        <label class="field">
+          <span class="label">Training text</span>
+          <textarea id="corpus" rows="12" spellcheck="false" aria-describedby="corpusStats"></textarea>
+        </label>
+        <p class="small" id="corpusStats"></p>
+        <p class="small muted" id="corpusNote"></p>
+      </section>
+
+      <section class="card" id="step-2">
+        <h2><span class="step">2</span> Choose the size of the model</h2>
+        <p class="sub">
+          Bigger is better here too — and slower. The estimate next to each is measured on a desktop CPU; yours may
+          differ, and the page will tell you the rate it is really achieving once it starts.
+        </p>
+        <div class="chips presets" id="presetButtons" role="group" aria-label="Choose a model size"></div>
+        <div class="stats" id="modelStats"></div>
+        <p class="small muted" id="paramAsides"></p>
+      </section>
+
+      <section class="card" id="step-3">
+        <h2><span class="step">3</span> Create the model</h2>
+        <p class="sub">
+          This is real training: forward pass, backward pass, and an optimiser step, over and over, on your machine.
+          You can stop it at any point and test what it has learned so far.
+        </p>
+        <div class="row">
+          <button class="primary" id="trainBtn" type="button">Create the model</button>
+          <button class="ghost" id="stopBtn" type="button" disabled>Stop</button>
+        </div>
+        <div
+          class="progress"
+          role="progressbar"
+          aria-label="Training progress"
+          aria-valuemin="0"
+          aria-valuemax="100"
+          aria-valuenow="0"
+        >
+          <div class="progress-fill" id="progressFill"></div>
+        </div>
+        <p class="status" id="statusMsg" role="status" aria-live="polite"></p>
+        <div class="train-grid">
+          <canvas id="lossChart" height="90" aria-label="Loss curve"></canvas>
+          <dl class="numbers">
+            <div><dt>loss</dt><dd id="lossValue">—</dd></div>
+            <div><dt>step</dt><dd id="stepValue">—</dd></div>
+            <div><dt>throughput</dt><dd id="rateValue">—</dd></div>
+            <div><dt>tokens seen</dt><dd id="tokenValue">—</dd></div>
+            <div><dt>time left</dt><dd id="etaValue">—</dd></div>
+          </dl>
+        </div>
+        <p class="small muted" id="configSummary"></p>
+      </section>
+
+      <section class="card test" id="testPanel">
+        <h2><span class="step">4</span> Test the model you made</h2>
+        <p class="sub" id="testIntro">
+          Train a model first — then this panel lets you sample from the one you just created.
+        </p>
+        <label class="field">
+          <span class="label">Start it off (optional)</span>
+          <input id="prompt" type="text" placeholder="leave empty, or type a few characters" spellcheck="false" />
+        </label>
+        <div class="sliders">
+          <label class="field">
+            <span class="label">Temperature <b id="temperatureValue">0.80</b></span>
+            <input id="temperature" type="range" min="0.1" max="1.6" step="0.05" value="0.8" />
+          </label>
+          <label class="field">
+            <span class="label">Top-k <b id="topKValue">0</b></span>
+            <input id="topK" type="range" min="0" max="20" step="1" value="0" />
+          </label>
+          <label class="field">
+            <span class="label">Length <b id="lengthValue">200</b></span>
+            <input id="length" type="range" min="40" max="500" step="20" value="200" />
+          </label>
+        </div>
+        <div class="row">
+          <button class="primary" id="generateBtn" type="button" disabled>Sample from it</button>
+          <button class="ghost" id="downloadWeights" type="button" disabled>Download the weights</button>
+          <button class="ghost" id="downloadReport" type="button" disabled>Training report</button>
+        </div>
+        <p class="status" id="genMsg" role="status" aria-live="polite"></p>
+        <div id="samples" class="samples"></div>
+        <p class="small muted">
+          Vocabulary the model actually learned from your text:
+          <span class="mono" id="vocabChars"></span>
+        </p>
+      </section>
+
+      <section class="card" id="how">
+        <h2>How it works</h2>
+        <p class="sub">The whole thing, in the order the data moves through it.</p>
+        <ol class="how">
+          <li>
+            <b>Tokeniser — character level.</b> The vocabulary is built from your text: every distinct character
+            becomes a token. No vocabulary file is downloaded, because the text makes its own.
+          </li>
+          <li>
+            <b>Embeddings.</b> Each token becomes a vector, and a second vector is added for its position, so the
+            model knows the difference between <span class="mono">ma</span> and <span class="mono">am</span>.
+          </li>
+          <li>
+            <b>Transformer blocks.</b> Each block is: layer norm → causal multi-head self-attention → residual add
+            → layer norm → feed-forward with GELU → residual add. Causal means a position can only see the
+            positions before it, which is what makes it a predictor rather than a copier.
+          </li>
+          <li>
+            <b>Head and loss.</b> A final layer norm, then a linear layer to the vocabulary, then softmax and
+            cross-entropy against the next character. That number — the loss — is what falls as it learns.
+          </li>
+          <li>
+            <b>Backpropagation.</b> Every gradient is derived by hand and written out in the file: through the
+            attention, through both layer norms, through GELU, through the embeddings. The test suite checks them
+            against numerical gradients, so a wrong derivative fails the build rather than silently training a
+            broken model.
+          </li>
+          <li>
+            <b>AdamW.</b> Adaptive steps with decoupled weight decay, plus a warm-up of the initialisation scaled
+            by the depth — the same choices the big models make, at ten-thousandth the size.
+          </li>
+          <li>
+            <b>Sampling.</b> Temperature rescales the logits and top-k truncates the distribution before drawing,
+            which is the difference between a model that repeats itself and one that improvises.
+          </li>
+        </ol>
+      </section>
+
+      <section class="card" id="honesty">
+        <h2>What this is, and what it is not</h2>
+        <div class="two-col">
+          <div>
+            <h3>It is</h3>
+            <ul>
+              <li>A real transformer, with real attention and real backpropagation — not a call to somebody else's API.</li>
+              <li>Real training, running in front of you: the loss curve is measured, not drawn.</li>
+              <li>Deterministic. The same text, size and seed produce the same model every time.</li>
+              <li>Yours to keep: the weights download as plain JSON.</li>
+            </ul>
+          </div>
+          <div>
+            <h3>It is not</h3>
+            <ul>
+              <li>A large language model. It is thousands to hundreds of thousands of parameters; GPT-2 small is 124 million, and a frontier model is larger again by orders of magnitude.</li>
+              <li>Trained on the world. It only knows the text you gave it — outside that text it produces plausible-looking noise, which is the honest failure mode of a tiny model.</li>
+              <li>A substitute for a GPU. One CPU core in a browser is the whole budget, which is exactly why the demo is built this way: the mechanism is the point.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="privacy">
+        <h2>Privacy</h2>
+        <p>
+          The text you paste is trained on in a Web Worker on your own machine and is never uploaded — there is no
+          request in the model code that could carry it, and a test asserts that. The model exists only in this tab
+          and disappears when you close it.
+        </p>
+        <p class="muted small">
+          The page carries Google Analytics, which records anonymous page, click and scroll events — never anything
+          you type. <a href="?ga=off">Stop counting this browser</a> · <a href="?ga=on">resume</a>.
+        </p>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="footer-brand">
+        <span class="mark" aria-hidden="true">
+          <svg viewBox="0 0 32 32" width="22" height="22">
+            <g fill="none" stroke="currentColor" stroke-width="1.7">
+              <circle cx="6" cy="10" r="3" />
+              <circle cx="6" cy="22" r="3" />
+              <circle cx="16" cy="16" r="3" />
+              <circle cx="26" cy="10" r="3" />
+              <circle cx="26" cy="22" r="3" />
+              <path d="M8.6 11.5 13.4 15M8.6 20.5 13.4 17M18.6 15 23.5 11.6M18.6 17 23.5 20.4" />
+            </g>
+          </svg>
+        </span>
+        <span><b>llm-demo</b> · <a href="https://nodejavascript.com/">nodejavascript.com</a></span>
+      </div>
+      <p class="footer-links">
+        <a href="./llm.js">The model source</a> ·
+        <a href="https://github.com/nodejavascript/neataptic-ts" rel="noopener">A neural-network library, in TypeScript</a> ·
+        <a href="#top">Back to top</a>
+      </p>
+      <p class="footer-copy">© 2026 llm-demo.nodejavascript.com. All rights reserved.</p>
+    </footer>
+  </body>
+</html>
