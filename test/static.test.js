@@ -227,6 +227,29 @@ test('the analytics id in the page is the one advertised to the script', () => {
   assert.ok(html.includes(`ga-disable-${id[1]}`), 'the opt-out must use the same id');
 });
 
+test('every asset the browser loads carries a cache-busting token', () => {
+  // Cloudflare holds assets at the edge AND in the browser for four hours
+  // whatever headers the server sends, so a deploy with an unchanged token is
+  // invisible to anyone who has already visited. That is not hypothetical: on the
+  // first deploy the page loaded the OLD llm.js and showed preset times that had
+  // already been corrected, because the import had no token on it.
+  const files = ['index.html', 'app.js', 'trainer-host.js', 'trainer.worker.js'];
+  const reference = /\.\/([A-Za-z0-9_.-]+\.(?:js|css))(\?[A-Za-z0-9=._-]*)?/g;
+  const tokens = new Set();
+
+  for (const file of files) {
+    const source = read(file);
+    for (const match of source.matchAll(reference)) {
+      const [, path, query] = match;
+      assert.ok(query && query.startsWith('?v='), `${file} loads ${path} without a ?v= token`);
+      tokens.add(query);
+    }
+  }
+
+  assert.ok(tokens.size >= 1, 'at least one versioned asset');
+  assert.equal(tokens.size, 1, `every asset must carry the same token, found ${[...tokens].join(', ')}`);
+});
+
 /* ------------------------------------------------------------------ *
  * The site is complete
  * ------------------------------------------------------------------ */

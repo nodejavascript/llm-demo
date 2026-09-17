@@ -5,10 +5,18 @@
  * Worker on this origin, trained there, and never sent anywhere. There is no
  * fetch, no XHR, no beacon in this file or the model code, and a test asserts
  * it (test/static.test.js).
+ *
+ * 🔴 EVERY MODULE REFERENCE CARRIES A `?v=` TOKEN, AND IT MUST BE BUMPED WITH
+ * EVERY CHANGE. Cloudflare holds assets at the edge and in the browser for four
+ * hours regardless of what the server sends, so without the token a deploy is
+ * invisible to anyone who has already visited: on the first deploy the page
+ * loaded the OLD llm.js and showed preset times that had already been corrected.
+ * A test enforces the token. The token is manual — the same approach as
+ * nodejavascript.com, and for the same reason.
  */
 
-import { PRESETS, preset, parameterCount, buildVocab } from './llm.js';
-import { CORPORA, DEFAULT_CORPUS } from './corpora.js';
+import { PRESETS, preset, parameterCount, buildVocab } from './llm.js?v=2';
+import { CORPORA, DEFAULT_CORPUS } from './corpora.js?v=2';
 
 const $ = (id) => document.getElementById(id);
 const GA_ID = window.LLM_DEMO_GA_ID || null;
@@ -75,7 +83,7 @@ function initAnalytics() {
 
 function createTransport() {
   try {
-    const worker = new Worker('./trainer.worker.js', { type: 'module' });
+    const worker = new Worker('./trainer.worker.js?v=2', { type: 'module' });
     let fellBack = false;
     return {
       send(message) {
@@ -106,7 +114,7 @@ function createTransport() {
 }
 
 function createLocalTransport() {
-  return import('./trainer-host.js').then(
+    return import('./trainer-host.js?v=2').then(
     ({ LlmHost }) => {
       const host = new LlmHost((message) => queueMicrotask(() => currentHandler && currentHandler(message)));
       return {

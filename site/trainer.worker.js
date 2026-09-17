@@ -7,7 +7,7 @@
  * workers are unavailable (see app.js) — the model code is the same either way.
  */
 
-import { LlmHost } from './trainer-host.js';
+import { LlmHost } from './trainer-host.js?v=2';
 
 const host = new LlmHost((message) => {
   self.postMessage(message);
