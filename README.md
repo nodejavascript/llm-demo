@@ -31,9 +31,13 @@ demonstrates the mechanism, not the scale, and the page says so.
 | `site/` | **published output** — the compiled `.js` plus the hand-written HTML, CSS, icons and SEO files |
 | `test/llm.test.js` | unit: gradients, training, determinism, sampling |
 | `test/static.test.js` | guards: page/script agreement, SEO limits, icon bytes, privacy, dead controls |
+| `test/training.test.js` | the fast guarantee: each preset is trained long enough, and sampling truncates by default |
+| `test/quality.test.js` | the slow guarantee: trains each preset and asserts the output is no longer noise |
 | `test/e2e.test.js` | end-to-end: a real Chrome against a real server |
 | `tools/bench.js` | measured throughput and sample quality per preset |
 | `tools/probe-prose.mjs` | what it does with prose (a diary) rather than with a list — the honest limit |
+| `tools/probe-defaults.mjs` | what the sample controls do to the same trained model |
+| `tools/probe-curve.mjs` | how many steps a shape needs before real words appear |
 | `tools/serve.js` | local static server (module workers need a real origin) |
 | `tools/deploy.sh` | build → test → rsync → purge → smoke-check |
 | `tools/verify-live-consent.mjs` | the same gate checked in a browser against the deployed site |
@@ -43,9 +47,11 @@ demonstrates the mechanism, not the scale, and the page says so.
 
 ```bash
 npm run build                  # tsc → site/
-npm test                       # build + unit + guards   (fast)
+npm test                       # build + unit + guards + the fast training checks (~1 s)
+npm run test:quality           # build + the training guarantee — slow: ~8 min for all three
+                               #   presets, or PRESET=quick npm run test:quality ≈ 35 s
 npm run test:e2e               # build + the browser suite (~1 min; needs Chrome)
-npm run test:all               # both
+npm run test:all               # everything
 node tools/bench.js            # what each preset really costs, with samples
 node tools/serve.js            # http://127.0.0.1:4320/
 python3 tools/make-icons.py    # after changing the mark
@@ -57,7 +63,7 @@ npm run deploy                 # publish
 
 ## Tests
 
-**Unit and guards (43).** The load-bearing one is a numerical gradient check of
+**Unit and guards (48).** The load-bearing one is a numerical gradient check of
 every parameter array against the analytic gradients. It is the test that makes
 the hand-derived backpropagation trustworthy, and it is why the two real bugs
 found while building this were caught rather than shipped: an unzeroed backward
@@ -66,6 +72,57 @@ layer sharing one set of activation buffers (with two layers, the backward pass
 for layer 0 read layer 1's numbers). Both guards are themselves guarded — the
 suite proves the gradient check *can* fail, and that the dead-control check
 catches a button that ships disabled and is never enabled.
+
+**The training guarantee (5, and the half that matters is slow).** Everything
+above asserts *mechanism* — that the gradients are right, that the vocabulary
+round-trips, that the shapes compose. All of it passed while the shipped presets
+were producing word-shaped noise, because nothing checked that the model had
+trained **enough to be worth sampling from**.
+
+Two files assert *outcome* instead. `test/training.test.js` holds the
+configuration to the measurement: each preset's step count must be at or above the
+number its shape is measured to need; a dearer preset must cost more time and be a
+bigger model; the advertised seconds must be arithmetically possible at the
+measured rate; `sample()` must truncate by default, asserted **by identity** so
+that with a fixed seed the no-argument call equals the explicit good defaults; the
+page's top-k slider must not default to 0; and `plannedSteps()` must return the
+preset's full step count on a realistic corpus.
+
+That last one exists because **the cap was the second half of the same bug**. The
+host capped every run at 40 passes over the corpus — computed from the *corpus*,
+not the preset — so on the built-in 4,359-character name list every preset ran
+exactly **605 steps**, and raising `quick` from 600 to 3,000 would have changed
+nothing at all. No unit test saw it, because the unit tests drive `new Trainer()`
+directly and never went through the host that applies the cap. It now lives in one
+exported function, `plannedSteps()`, used by the host and by the tests.
+
+**And a loss is a sample, not a value.** The trainer starts from a random
+initialisation, so the same shape at the same step count lands somewhere different
+every run: `thorough`'s configuration measured **1.310** once and **1.679** another
+time, and `quick` at 3,000 steps measured 1.476 then **1.567** — passing by 0.033.
+That is why the quality gate trains with a **fixed seed**, why `quick` now trains
+4,000 steps, and why `thorough` is a 2-layer model trained 3,000 steps rather than a
+3-layer one trained 800. Current verified figures, loss against a 1.6 line:
+`quick` **1.462** · `standard` **1.344** · `thorough` **0.775**.
+
+`test/quality.test.js` is the guarantee itself. It trains **each preset for the run
+the page would really take** — through the same `plannedSteps()` — and asserts the
+smoothed loss is below `RECOGNISABLE_LOSS` *and* that at least 12% of the sampled
+words really occur in the corpus. Both
+numbers are measured, not chosen:
+
+| smoothed loss | words in the sample that occur in the corpus |
+|---|---|
+| 2.47 | 3% |
+| 1.94 | 4% |
+| 1.65 | 13% |
+| 1.36 | 23% |
+| 0.91 | 31% |
+
+The shipped presets sat between 1.9 and 2.5 — which is why a visitor pressed
+"Sample from it" and got alphabet soup. `npm run test:quality` runs the gate;
+`tools/deploy.sh` runs the `quick` preset on every deploy, so a preset that
+regresses cannot be published.
 
 **End-to-end (17).** A real Chrome, the real worker, the real download path,
 against `tools/serve.js`:

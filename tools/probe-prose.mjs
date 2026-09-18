@@ -15,6 +15,13 @@
  * that are mostly not words. The model learned the form and not the language,
  * which is exactly what its size allows.
  *
+ * ⚠️ THAT MEASUREMENT WAS TAKEN WHEN `standard` TRAINED 250 STEPS. It now trains
+ * its full 1,500, so a run of this probe takes about two minutes instead of
+ * twenty-seven seconds and the text is markedly better. The honest limit it
+ * demonstrates has not moved — a model this size on prose of this kind still
+ * learns form rather than meaning — but the numbers below are historical, and
+ * `tools/probe-curve.mjs` is the rig to re-measure them.
+ *
  * Not part of the test suite: it prints a judgement, not a pass or a fail.
  */
 import { Trainer, preset, buildVocab, encode, lineStartToken } from '../site/llm.js';

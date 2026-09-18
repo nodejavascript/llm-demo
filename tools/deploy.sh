@@ -17,7 +17,13 @@ echo "== build =="
 npm run build
 
 echo "== unit tests =="
-node --test test/llm.test.js test/static.test.js
+node --test test/llm.test.js test/static.test.js test/training.test.js
+
+# The one that would have caught the garbage: it trains the preset and asserts the
+# loss clears RECOGNISABLE_LOSS. Only `quick`, because a deploy cannot wait eight
+# minutes — the full three-preset gate is `npm run test:quality`.
+echo "== training quality gate (quick preset) =="
+PRESET=quick node --test test/quality.test.js
 
 echo "== publish =="
 rsync -az --delete --rsync-path="sudo rsync" site/ dvs-sites:/srv/llm-demo/

@@ -6,7 +6,8 @@
   "description": "Train a small language model, from scratch, in the browser. Static site for llm-demo.nodejavascript.com",
   "scripts": {
     "build": "tsc",
-    "test": "npm run build && node --test test/llm.test.js test/static.test.js",
+    "test": "npm run build && node --test test/llm.test.js test/static.test.js test/training.test.js",
+    "test:quality": "npm run build && node --test test/quality.test.js",
     "test:e2e": "npm run build && node --test test/e2e.test.js",
     "test:all": "npm run build && node --test test/*.test.js",
     "bench": "npm run build && node tools/bench.js",

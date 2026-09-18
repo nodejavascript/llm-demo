@@ -115,38 +115,123 @@ export function lineStartToken(data, vocab) {
  * Model shapes
  * ------------------------------------------------------------------ */
 /**
+ * 🔴 STEPS ARE CHOSEN FROM THE LOSS, NOT FROM THE CLOCK — and they were once
+ * chosen from the clock, which is why the demo produced garbage.
+ *
+ * Measured 18 Sep 2026, `README.md` as the corpus (8,389 characters, vocabulary
+ * of 84), sampling primed from a real line at temperature 0.7 with top-k 40. The
+ * relationship between the smoothed loss and whether the output contains real
+ * words is sharp and monotonic:
+ *
+ *     loss 2.47  ->  3% of the words in the sample occur in the corpus
+ *     loss 2.07  ->  4%
+ *     loss 1.94  ->  4%
+ *     loss 1.65  -> 13%
+ *     loss 1.36  -> 23%
+ *     loss 0.91  -> 31%
+ *
+ * **Below about 1.6 the output is recognisable; above about 1.9 it is noise.**
+ * `RECOGNISABLE_LOSS` is that boundary and `test/quality.test.js` asserts every
+ * preset clears it. The step counts below are the measured minimum each shape
+ * needs to get there. They were previously 600 / 250 / 300, which left all three
+ * presets between 1.9 and 2.5 — squarely in the noise, which is exactly what a
+ * visitor saw.
+ *
+ * 🔴 A LOSS IS A SAMPLE, NOT A VALUE. The trainer starts from a random
+ * initialisation, so the same shape at the same step count lands on a different
+ * loss on a different run. `thorough` was first given 800 steps because ONE run
+ * of that shape measured 1.310 — and a later run of the identical configuration
+ * measured **1.679**, over the line, which `test/quality.test.js` caught and
+ * failed on. The lesson is not to set a threshold from a single run: a preset
+ * needs MARGIN, not a passing sample. The quality gate now trains with a fixed
+ * seed so it is reproducible, and the presets are chosen to clear 1.6 with room
+ * rather than to sit just under it.
+ *
+ * That is why `thorough` is a 2-layer model trained twice as long rather than a
+ * 3-layer one trained briefly. Measured on the same corpus: 3 layers costs
+ * 389 ms a step and needs far more than 800 of them to converge, while the
+ * 2-layer shape reaches loss **0.601** in 3,000 steps and 254 s — better text,
+ * and less than half the wait.
+ *
+ * And a preset has to clear the threshold with MARGIN, not by a hair. `quick` was
+ * first given 3,000 steps, where it measured 1.476 on one seed and **1.567** on
+ * the fixed seed the gate uses — passing by 0.033. That is not a margin, it is a
+ * coin toss, so `quick` now trains 4,000 steps and measures about **1.36**.
+ *
  * `seconds` is the time the FIRST run in a fresh tab takes — the one a visitor
  * actually meets — because the browser has to compile the loops before it
- * settles. Measured in Chrome on a desktop CPU, 2026-09-17: 600 `quick` steps in
- * 13.8 s cold and 8 s warm, 250 `standard` steps in 27 s warm, and the biggest
- * model at roughly 0.4 s a step. The page also reports the rate it is really
- * achieving, with an estimate taken from that rate, so a slower machine says so
- * rather than quietly taking longer. Any run can be stopped early and tested as
- * it stands.
+ * settles. Measured on a desktop CPU: about 87 steps/s for `quick`, 11 for
+ * `standard`, 2.6 for `thorough` (389 ms a step). The page reports the rate it
+ * is really achieving and takes its estimate from that rate, so a slower machine
+ * says so rather than quietly taking longer. Any run can be stopped early and
+ * tested as it stands — but stopping early is what produces the nonsense, so the
+ * page now says that too.
  */
+/**
+ * The smoothed loss below which the output stops being noise.
+ *
+ * Not a taste judgement — it is where real words start appearing in the samples,
+ * measured across both model shapes (table above). Above it the model is still
+ * learning character frequencies and cannot form words; below it, it can.
+ */
+export const RECOGNISABLE_LOSS = 1.6;
 export const PRESETS = {
     quick: {
-        key: 'quick', label: 'Quick', blurb: 'seconds — enough to watch it learn',
-        seconds: 15,
+        key: 'quick', label: 'Quick', blurb: 'under a minute — the smallest, trained enough to form words',
+        seconds: 50,
         nLayer: 1, nHead: 2, dModel: 32, dFF: 64,
-        blockSize: 24, batchSize: 12, lr: 3e-3, steps: 600, weightDecay: 0.01,
+        blockSize: 24, batchSize: 12, lr: 3e-3, steps: 4000, weightDecay: 0.01,
     },
     standard: {
-        key: 'standard', label: 'Standard', blurb: 'about half a minute — clearly better',
-        seconds: 45,
+        key: 'standard', label: 'Standard', blurb: 'about two minutes — learns distinctly more of the language',
+        seconds: 135,
         nLayer: 2, nHead: 2, dModel: 64, dFF: 128,
-        blockSize: 32, batchSize: 12, lr: 2e-3, steps: 250, weightDecay: 0.01,
+        blockSize: 32, batchSize: 12, lr: 2e-3, steps: 1500, weightDecay: 0.01,
     },
     thorough: {
-        key: 'thorough', label: 'Thorough', blurb: 'a couple of minutes — the biggest that stays usable here',
-        seconds: 150,
-        nLayer: 3, nHead: 4, dModel: 96, dFF: 192,
-        blockSize: 48, batchSize: 12, lr: 1.5e-3, steps: 300, weightDecay: 0.01,
+        key: 'thorough', label: 'Thorough', blurb: 'about four minutes — Standard, trained twice as long',
+        seconds: 255,
+        nLayer: 2, nHead: 2, dModel: 64, dFF: 128,
+        blockSize: 32, batchSize: 12, lr: 2e-3, steps: 3000, weightDecay: 0.01,
     },
 };
 export function preset(name) {
     const found = PRESETS[name];
     return { ...(found ?? PRESETS.quick) };
+}
+/**
+ * The ceiling on how many times a run may read its corpus.
+ *
+ * 🔴 THIS WAS 40, AND IT WAS THE SECOND HALF OF THE GARBAGE BUG. A preset's
+ * `steps` were quietly overridden by this cap, because the cap is computed from
+ * the CORPUS rather than from the preset:
+ *
+ *     steps = min(config.steps, (dataLength - 1) * 40 / (batchSize * blockSize))
+ *
+ * On the 4,359-character built-in name list that is **605 steps for every
+ * preset** — so raising `quick` from 600 to 3,000 would have changed nothing at
+ * all. On a 12,000-character paste, `standard` would have been cut from 1,500 to
+ * about 1,250. The cap was there so the progress bar could not promise an absurd
+ * number of passes over a tiny text, which is a real concern, but 40 was low
+ * enough to be the thing that decided how well the model learned — and the loss
+ * has to fall past `RECOGNISABLE_LOSS` for the output to be words at all.
+ *
+ * So the ceiling is now high enough not to bind on any realistic paste, while
+ * still keeping a one-paragraph corpus from being read ten thousand times.
+ */
+export const MAX_EPOCHS = 400;
+/**
+ * How many steps a run will really take, which is what the progress bar, the
+ * time estimate, and the quality test must all agree on.
+ *
+ * Exported so that `test/quality.test.js` trains the run the PAGE would train
+ * rather than a longer one the page can never reach — a test that bypasses this
+ * would have passed while the cap was still throttling everything.
+ */
+export function plannedSteps(config, dataLength) {
+    const perStep = Math.max(1, config.batchSize * config.blockSize);
+    const ceiling = Math.max(1, Math.floor(((dataLength - 1) * MAX_EPOCHS) / perStep));
+    return Math.max(1, Math.min(config.steps, ceiling));
 }
 export function parameterCount(config, vocabSize) {
     const { nLayer, dModel: C, dFF: F, blockSize: T } = config;
@@ -737,8 +822,17 @@ export class Trainer {
         }
         return pool[pool.length - 1];
     }
-    /** Generate text. Returns the characters produced (the prompt is not included). */
-    sample({ prompt = '', length = 240, temperature = 0.8, topK = 0, seed = null } = {}) {
+    /**
+     * Generate text. Returns the characters produced (the prompt is not included).
+     *
+     * `topK` defaults to truncation, not to 0 (off). A top-k of zero draws from the
+     * entire vocabulary, so the long tail of near-impossible characters is sampled
+     * constantly and the text is noisier for no gain — the page's control is for
+     * WIDENING it, not for switching it off. 20 is a sensible cut for a character
+     * vocabulary; the loss and word measurements in `PRESETS` were taken at 40, the
+     * looser setting, so the default here is the more conservative of the two.
+     */
+    sample({ prompt = '', length = 240, temperature = 0.8, topK = 20, seed = null } = {}) {
         if (seed !== null)
             this.rand = mulberry32(seed);
         const T = this.T;

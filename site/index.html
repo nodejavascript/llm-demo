@@ -148,7 +148,7 @@
         </p>
         <ul class="facts">
           <li><b>Nothing you type leaves this page.</b> It trains in a Web Worker on your own machine.</li>
-          <li><b>Seconds, not hours.</b> About twelve thousand parameters in about fifteen seconds.</li>
+          <li><b>Seconds, not hours.</b> Fifteen thousand to a quarter of a million parameters, trained on your own machine in half a minute to five minutes.</li>
           <li>
             <b>Read all of it.</b> <a href="./llm.js">The compiled model</a>, and the
             <a href="https://github.com/nodejavascript/llm-demo">TypeScript it is built from</a>.
@@ -174,8 +174,9 @@
       <section class="card" id="step-2">
         <h2><span class="step">2</span> Choose the size of the model</h2>
         <p class="sub">
-          Bigger is better here too — and slower. The estimate next to each is measured on a desktop CPU; yours may
-          differ, and the page will tell you the rate it is really achieving once it starts.
+          Bigger is slower — and worth it only if it is allowed to finish. Every preset here is trained long enough
+          to start forming real words, which is why none of them is instant. The estimate next to each is measured
+          on a desktop CPU; yours may differ, and the page reports the rate it is really achieving once it starts.
         </p>
         <div class="chips presets" id="presetButtons" role="group" aria-label="Choose a model size"></div>
         <div class="stats" id="modelStats"></div>
@@ -186,7 +187,9 @@
         <h2><span class="step">3</span> Create the model</h2>
         <p class="sub">
           This is real training: forward pass, backward pass, and an optimiser step, over and over, on your machine.
-          You can stop it at any point and test what it has learned so far.
+          You can stop it at any point and test what it has learned so far — but stopping early is the one thing that
+          produces nonsense. Until the loss is low the model has learned which characters are common and not yet
+          which characters follow which, so it emits the right alphabet in the wrong order.
         </p>
         <div class="row">
           <button class="primary" id="trainBtn" type="button">Create the model</button>
@@ -231,8 +234,8 @@
             <input id="temperature" type="range" min="0.1" max="1.6" step="0.05" value="0.8" />
           </label>
           <label class="field">
-            <span class="label">Top-k <b id="topKValue">0</b></span>
-            <input id="topK" type="range" min="0" max="20" step="1" value="0" />
+            <span class="label">Top-k <b id="topKValue">20</b></span>
+            <input id="topK" type="range" min="0" max="40" step="1" value="20" />
           </label>
           <label class="field">
             <span class="label">Length <b id="lengthValue">200</b></span>
