@@ -145,8 +145,20 @@ test('trains a model, samples it, and offers the artefacts', async () => {
 
   const loss = Number(await page.locator('#lossValue').textContent());
   assert.ok(Number.isFinite(loss) && loss > 0 && loss < 4, `loss looks wrong: ${loss}`);
-  assert.match(await page.locator('#statusMsg').textContent(), /Trained 600 steps in/);
-  assert.match(await page.locator('#configSummary').textContent(), /600 steps · vocabulary 53/);
+
+  // The step count is READ from the page, not hard-coded here. It is decided by
+  // the preset AND the corpus, through `plannedSteps` — and a literal in the test
+  // is what broke everything when the presets gained the steps they needed. The
+  // property worth asserting is not the number: it is that the run takes the
+  // number it announced, and that the announcement is not a token amount.
+  const statusText = await page.locator('#statusMsg').textContent();
+  const summaryText = await page.locator('#configSummary').textContent();
+  const announced = Number((summaryText.match(/([\d,]+)\s+steps/) ?? [])[1]?.replace(/,/g, ''));
+  const trained = Number((statusText.match(/Trained ([\d,]+) steps in/) ?? [])[1]?.replace(/,/g, ''));
+  assert.ok(announced > 0, `no step count announced in: ${summaryText}`);
+  assert.equal(trained, announced, 'the run must take the number of steps it announced');
+  assert.ok(trained >= 1000, `only ${trained} steps — the preset is being throttled`);
+  assert.match(summaryText, /vocabulary 53/, 'the built-in name list was expected');
 
   const samples = await page.locator('#samples .sample').allTextContents();
   assert.equal(samples.length, 3);

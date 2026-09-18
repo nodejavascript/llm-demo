@@ -12,7 +12,7 @@
  * error rather than an `undefined` at runtime.
  */
 
-import { Trainer, buildVocab, encode, preset, parameterCount } from './llm.js';
+import { Trainer, buildVocab, encode, preset, parameterCount, plannedSteps } from './llm.js';
 import type { ExportedWeights, ModelConfig, TrainingReport, Vocab } from './llm.js';
 
 const SLICE_MS = 40;
@@ -181,12 +181,11 @@ export class LlmHost {
     this.stopped = false;
     this.peakLoss = null;
 
-    // A small corpus cannot support an unbounded number of batches; cap the run
-    // so the progress bar and the estimate stay truthful.
-    this.steps = Math.min(
-      config.steps,
-      Math.max(1, Math.floor(((data.length - 1) * 40) / (config.batchSize * config.blockSize)))
-    );
+    // A small corpus cannot support an unbounded number of batches; `plannedSteps`
+    // caps the run at MAX_EPOCHS passes so the progress bar and the estimate stay
+    // truthful — and it is the same function the quality test uses, so the test
+    // measures the run the page really performs.
+    this.steps = plannedSteps(config, data.length);
 
     this.emit({
       type: 'started',
