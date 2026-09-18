@@ -33,6 +33,7 @@ demonstrates the mechanism, not the scale, and the page says so.
 | `test/static.test.js` | guards: page/script agreement, SEO limits, icon bytes, privacy, dead controls |
 | `test/e2e.test.js` | end-to-end: a real Chrome against a real server |
 | `tools/bench.js` | measured throughput and sample quality per preset |
+| `tools/probe-prose.mjs` | what it does with prose (a diary) rather than with a list — the honest limit |
 | `tools/serve.js` | local static server (module workers need a real origin) |
 | `tools/deploy.sh` | build → test → rsync → purge → smoke-check |
 | `tools/verify-live-consent.mjs` | the same gate checked in a browser against the deployed site |
