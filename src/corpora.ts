@@ -10,6 +10,14 @@
  * The dialogue set was written for this demo. The names are a hand-written list
  * of common given names (a list of names is a fact, not a work).
  */
+
+export interface Corpus {
+  key: string;
+  label: string;
+  note: string;
+  text: string;
+}
+
 export const NAME_LIST = `Aaron
 Abigail
 Adam
@@ -663,6 +671,7 @@ Yvette
 Yvonne
 Zachary
 Zoe`;
+
 export const DIALOGUE = `Ana: are you coming tonight
 Ben: i can't, i'm working late
 Ana: again?
@@ -777,18 +786,20 @@ Ana: you never do
 Ben: this time i will
 Ana: goodnight
 Ben: goodnight`;
-export const CORPORA = {
-    names: {
-        key: 'names',
-        label: 'Given names',
-        note: 'about six hundred names, one per line. The model learns to invent new ones.',
-        text: NAME_LIST,
-    },
-    dialogue: {
-        key: 'dialogue',
-        label: 'Dialogue',
-        note: 'a short two-person conversation, written for this demo. The model learns the shape of a turn.',
-        text: DIALOGUE,
-    },
+
+export const CORPORA: Record<string, Corpus> = {
+  names: {
+    key: 'names',
+    label: 'Given names',
+    note: 'about six hundred names, one per line. The model learns to invent new ones.',
+    text: NAME_LIST,
+  },
+  dialogue: {
+    key: 'dialogue',
+    label: 'Dialogue',
+    note: 'a short two-person conversation, written for this demo. The model learns the shape of a turn.',
+    text: DIALOGUE,
+  },
 };
+
 export const DEFAULT_CORPUS = 'names';

@@ -5,11 +5,19 @@
   "type": "module",
   "description": "Train a small language model, from scratch, in the browser. Static site for llm-demo.nodejavascript.com",
   "scripts": {
-    "test": "node --test test/*.test.js",
-    "bench": "node tools/bench.js",
-    "serve": "node tools/serve.js"
+    "build": "tsc",
+    "test": "npm run build && node --test test/llm.test.js test/static.test.js",
+    "test:e2e": "npm run build && node --test test/e2e.test.js",
+    "test:all": "npm run build && node --test test/*.test.js",
+    "bench": "npm run build && node tools/bench.js",
+    "serve": "node tools/serve.js",
+    "deploy": "bash tools/deploy.sh"
   },
   "engines": {
     "node": "22"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0",
+    "typescript": "^5.9.3"
   }
 }
