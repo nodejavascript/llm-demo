@@ -281,8 +281,9 @@ test('the panel names the purpose and its switch ships off', () => {
   assert.match(html, /id="consentAnalytics"[^>]*aria-checked="false"/, 'the switch must arrive off: a pre-ticked box is a default, not a choice');
   assert.match(html, /Off unless you turn it on/, 'the panel says what the switch does');
   assert.match(html, /never anything you type and never the text\s+you train on/, 'the panel says what is never sent');
-  assert.match(html, /href="#cookies"/, 'the ask links to the detail rather than carrying it');
-  assert.match(html, /id="cookies"/, 'and that link must resolve to a real heading');
+  assert.match(html, /href="#privacy"/, 'the ask links to the Privacy section rather than carrying it all');
+  assert.match(html, /id="privacy"/, 'and that link must resolve to a real section');
+  assert.match(html, /id="cookies"/, 'which must itself name the cookies');
   assert.match(html, /id="consentDeviceRow"[^>]*hidden/, 'the owner row stays out of sight until it is used');
   assert.match(html, /id="consentBtn"/, 'the footer keeps one door to change the answer');
 });
