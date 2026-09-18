@@ -34,6 +34,16 @@
   box-sizing: border-box;
 }
 
+/* `hidden` has to beat any display rule, or a control hidden in the markup comes
+   back the moment a class gives it a display — the attribute only sets
+   `display: none` at the lowest possible weight. The cookie bar and its two views
+   swap places by setting `hidden`, and two of them are laid out with flex, so
+   without this the ask stays on screen underneath the panel and the swap silently
+   does nothing. */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   margin: 0;
@@ -606,4 +616,213 @@ a:hover {
   margin: 10px 0 0;
   font-size: 12.5px;
   color: rgba(168, 156, 196, 0.75);
+}
+
+/* ---------- the cookie bar ----------
+
+   The same consent model as inputresponse.com, in this page's colours. Three
+   things here are deliberate and should stay that way.
+
+   It sits in one row - the question, then the two answers - because a banner that
+   stacks into paragraphs is a banner people resent. The two answers carry the
+   page's own `ghost` class, so they are the same size, the same weight and the
+   same distance from the reader: no accept-first order, no smaller decline, and
+   no colour that quietly says which one is welcome. And the detail lives one link
+   away rather than in the bar itself. */
+
+/* A fixed banner sits on top of whatever is behind it and takes the click, so the
+   page leaves exactly the banner's own height free while it is up - measured and
+   written back by consent.js, and reset to zero the moment the question is
+   answered. Before this the footer could not be clicked at all until a visitor
+   answered a question about cookies, which is not a question anyone should have to
+   answer to reach a link. */
+body {
+  padding-bottom: var(--consent-height, 0px);
+}
+
+.consent {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+  padding: 13px 20px;
+  background: rgba(27, 16, 44, 0.96);
+  border-top: 1px solid var(--line);
+  backdrop-filter: blur(8px);
+  /* It is the last thing on the screen, so it must never be taller than the
+     screen. On a short viewport - a phone in landscape is about 320px tall - the
+     stacked layout could otherwise grow past the top edge, and the part above it
+     is fixed to the window: it cannot be scrolled to and cannot be clicked.
+     Capped and made scrollable, every part of the question stays reachable. `dvh`
+     is the height the browser actually gives the page once its own toolbars are
+     accounted for; `vh` stays first for anything that does not know it. */
+  max-height: calc(100vh - 12px);
+  max-height: calc(100dvh - 12px);
+  overflow-y: auto;
+}
+.consentTitle {
+  flex: 0 0 auto;
+  margin: 0;
+  font-size: 14px;
+  color: var(--text);
+  white-space: nowrap;
+}
+.consentText {
+  flex: 1 1 300px;
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+.consentActions {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(0, 1fr);
+  flex: 1 1 auto;
+  gap: 10px;
+}
+.consentActions button {
+  min-width: 0;
+  padding: 10px 14px;
+}
+/* An anchor does not inherit body colour, so a link dropped into new markup gets
+   the browser's default blue - which is out of place on this panel. Anything that
+   wants to look like this site has to say so. */
+.consentText a {
+  color: var(--text);
+}
+
+/* The question and the longer answer share ONE fixed bar and swap places inside
+   it, rather than a second dialog opening over the first. That is not tidiness:
+   this bar is the element whose height is measured and reserved at the bottom of
+   the page, and the observer already follows it - so the taller view is measured
+   like the shorter one instead of guessed at. */
+.consentAsk {
+  flex: 1 1 320px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 22px;
+}
+.consentPrefs {
+  flex: 1 1 100%;
+}
+/* The title's row, so the way out sits at the top right of the panel and not among
+   the answers at the bottom. A panel with no dismiss is a consent wall: somebody
+   who opened it to LOOK had to answer it again to get out. */
+.consentHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.consentClose {
+  flex: 0 0 auto;
+  background: none;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  color: var(--muted);
+  font: inherit;
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 3px 10px;
+}
+.consentClose:hover,
+.consentClose:focus-visible {
+  color: var(--text);
+  border-color: var(--text);
+}
+/* The way to the longer answer, and quieter than the two answers on purpose: it is
+   not a third answer to the question, and it must not read as one. */
+.consentSettings {
+  flex: 0 0 auto;
+  color: var(--muted);
+}
+/* A control that looks like a link because it reads like one - the footer door and
+   the settings offer. Two of them drawn differently is how a page starts looking
+   unfinished. */
+.linkish {
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-decoration: none;
+}
+.linkish:hover,
+.linkish:focus-visible {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* EVERY PURPOSE IS NAMED, and there is exactly one real choice to name: this site
+   has no strictly necessary cookie to describe, so it does not invent a row to
+   look thorough. */
+.consentList {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.consentRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 16px;
+  padding: 10px 0;
+  border-top: 1px solid var(--line);
+}
+.consentRow > div {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+.consentRowName {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+.consentRowWhy {
+  margin: 2px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--muted);
+}
+
+/* The switch. Its ring is drawn from `aria-checked`, so what the eye sees and what
+   a screen reader announces are the same attribute and cannot drift apart -
+   nothing in the script toggles a class. The word beside it carries the state as
+   well, because a state shown only in colour is a state some readers cannot see. */
+.consentSwitch {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--muted);
+  cursor: pointer;
+}
+.consentSwitch .consentDot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.consentSwitch[aria-checked="true"] {
+  border-color: var(--accent);
+  color: var(--text);
+}
+.consentSwitch[aria-checked="true"] .consentDot {
+  background: var(--accent);
 }

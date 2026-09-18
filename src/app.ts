@@ -23,9 +23,14 @@ import type { HostMessage, HostRequest } from './trainer-host.js';
 
 declare global {
   interface Window {
-    LLM_DEMO_GA_ID?: string;
     dataLayer?: unknown[];
     gtag?: (...args: unknown[]) => void;
+    /**
+     * Defined by consent.ts, and ONLY once a visitor has allowed analytics. Its
+     * absence is the gate: this page has no other way to send an event, so a
+     * visitor who has not consented cannot be counted by accident.
+     */
+    llmTrack?: (name: string, params?: Record<string, unknown>) => void;
   }
 }
 
@@ -36,63 +41,23 @@ function $<T extends HTMLElement = HTMLElement>(id: string): T {
   return el as unknown as T;
 }
 
-const GA_ID = window.LLM_DEMO_GA_ID ?? null;
-
 /* ------------------------------------------------------------------ *
- * Analytics — anonymous, and only ever about the page, never the text
- * ------------------------------------------------------------------ */
+ * Analytics — anonymous, only ever about the page, and only with consent
+ * ------------------------------------------------------------------ *
+ *
+ * The page_view, element_click and scroll_depth events, and the tag itself, all
+ * live in consent.ts, because that is the file that may not load Google's script
+ * before the visitor says yes. This function is the whole of what this file
+ * knows about it: it sends the events that are about the model — training
+ * started, a model finished, text generated — and if no consent has been given
+ * then `llmTrack` does not exist and nothing is sent at all.
+ *
+ * What is never sent, in any version of this file: the text the visitor pasted,
+ * any sample the model produced, or any character of either. Only counts,
+ * timings and preset names. */
 
 function track(name: string, params: Record<string, unknown> = {}): void {
-  if (typeof window.gtag === 'function') window.gtag('event', name, params);
-}
-
-function initAnalytics(): void {
-  // Per-page view with send_page_view off: this is a single-page site whose
-  // views are all the same URL, so the tag is configured once and never again.
-  if (typeof window.gtag === 'function' && GA_ID) {
-    window.gtag('config', GA_ID, { send_page_view: false });
-    window.gtag('event', 'page_view', {
-      page_location: location.href,
-      page_path: location.pathname + location.search,
-      page_title: document.title,
-    });
-  }
-
-  // Universal element_click: what was clicked, never what was typed.
-  document.addEventListener(
-    'click',
-    (event: MouseEvent) => {
-      const target = event.target as HTMLElement | null;
-      const el = target?.closest('a, button');
-      if (!el) return;
-      const href = el.getAttribute('href') ?? '';
-      const outbound = /^https?:\/\//i.test(href) && !href.includes(location.hostname);
-      track('element_click', {
-        element_id: el.id || el.getAttribute('data-ga') || '',
-        element_kind: el.tagName.toLowerCase(),
-        element_role: el.className || '',
-        outbound,
-        link_scheme: /^mailto:/i.test(href) ? 'mailto' : /^tel:/i.test(href) ? 'tel' : '',
-        outbound_host: outbound ? new URL(href).hostname : '',
-      });
-    },
-    true
-  );
-
-  // scroll_depth at 25 / 50 / 75 / 100, once each
-  const seen = new Set<number>();
-  const onScroll = (): void => {
-    const scrollable = document.documentElement.scrollHeight - window.innerHeight;
-    const percent = scrollable <= 0 ? 100 : Math.round((window.scrollY / scrollable) * 100);
-    for (const mark of [25, 50, 75, 100]) {
-      if (percent >= mark && !seen.has(mark)) {
-        seen.add(mark);
-        track('scroll_depth', { percent_scrolled: mark });
-      }
-    }
-  };
-  window.addEventListener('scroll', onScroll, { passive: true });
-  onScroll();
+  window.llmTrack?.(name, params);
 }
 
 /* ------------------------------------------------------------------ *
@@ -635,8 +600,8 @@ async function boot(): Promise<void> {
       $(`${id}Value`).textContent = id === 'temperature' ? Number(input.value).toFixed(2) : input.value;
     });
   }
-
-  initAnalytics();
+  // Nothing to start here: consent.ts owns analytics, and it has already decided
+  // whether it is allowed to. See the note above `track`.
 }
 
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => void boot());

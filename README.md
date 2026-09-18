@@ -25,7 +25,8 @@ demonstrates the mechanism, not the scale, and the page says so.
 | `src/llm.ts` | the model: tokenizer, kernels, forward, backward, AdamW, sampling |
 | `src/trainer-host.ts` | drives a Trainer in time-bounded slices; owns the request/reply types |
 | `src/trainer.worker.ts` | module worker wrapper (the page falls back to the main thread) |
-| `src/app.ts` | the page: controls, loss chart, analytics, downloads |
+| `src/app.ts` | the page: controls, loss chart, downloads |
+| `src/consent.ts` | the cookie gate — the only file that may load Google's script, and only after a yes |
 | `src/corpora.ts` | the two built-in texts |
 | `site/` | **published output** — the compiled `.js` plus the hand-written HTML, CSS, icons and SEO files |
 | `test/llm.test.js` | unit: gradients, training, determinism, sampling |
@@ -34,6 +35,7 @@ demonstrates the mechanism, not the scale, and the page says so.
 | `tools/bench.js` | measured throughput and sample quality per preset |
 | `tools/serve.js` | local static server (module workers need a real origin) |
 | `tools/deploy.sh` | build → test → rsync → purge → smoke-check |
+| `tools/verify-live-consent.mjs` | the same gate checked in a browser against the deployed site |
 | `tools/make-icons.py` | regenerates the icon set and the social card |
 
 ## Working on it
@@ -54,7 +56,7 @@ npm run deploy                 # publish
 
 ## Tests
 
-**Unit and guards (38).** The load-bearing one is a numerical gradient check of
+**Unit and guards (43).** The load-bearing one is a numerical gradient check of
 every parameter array against the analytic gradients. It is the test that makes
 the hand-derived backpropagation trustworthy, and it is why the two real bugs
 found while building this were caught rather than shipped: an unzeroed backward
@@ -64,7 +66,7 @@ for layer 0 read layer 1's numbers). Both guards are themselves guarded — the
 suite proves the gradient check *can* fail, and that the dead-control check
 catches a button that ships disabled and is never enabled.
 
-**End-to-end (9).** A real Chrome, the real worker, the real download path,
+**End-to-end (17).** A real Chrome, the real worker, the real download path,
 against `tools/serve.js`:
 
 - every asset really arrives `Cache-Control: no-store`;
@@ -78,8 +80,41 @@ against `tools/serve.js`:
 - the analytics carry `page_view`, `train_started`, `text_generated`,
   `scroll_depth`, `element_click` and `model_trained` — and a stopped run is *not*
   recorded as a completion;
-- no horizontal overflow at seven widths;
+- **the cookie gate**, which is the only part of this site that can be wrong in a
+  way nobody can see: with no answer, a refusal, or `?ga=off`, the request log is
+  checked for **zero** requests to Google and `window.gtag` must be `undefined`; a
+  yes must fetch the tag and open the event route; a refusal must not come back;
+  the switch must start off; and turning it off must reload into a page that
+  contacts nobody;
+- no horizontal overflow at seven widths, and the banner never covering the footer;
 - the icon set, manifest, robots and sitemap are all really served.
+
+**Live (13 checks).** `node tools/verify-live-consent.mjs` runs the same gate
+against the deployed site in five states, which is where the DNS, the TLS, the
+Caddy headers and the cache purge all have to be right at once.
+
+## Cookies — the tag is not in the page, and that is the point
+
+`site/index.html` contains **no Google script and no analytics code at all**. The
+measurement id rides on the consent script as an attribute (`data-ga-id`), and
+`site/consent.js` appends the tag **only after a yes** — so a visit that refuses
+makes no request to Google and receives no cookie. The choice is stored in
+`localStorage` (`analytics_consent`), not in a cookie; `?ga=off` and `?ga=on`
+remain the owner's own switch and beat whatever a visitor chose.
+
+This is the same model as `inputresponse.com`, and it exists because the previous
+arrangement — tag in the head, opt-out in front of it — is not consent: the
+script had already loaded and the cookie was already set before anyone was asked.
+
+If you are changing anything here, three things are load-bearing, and each has a
+test:
+
+1. the tag must not appear in `index.html` in any form;
+2. the click and scroll listeners must be created **inside** `start()`, after the
+   yes — no listener at all is a different promise from a listener that stays
+   quiet;
+3. nothing may read the corpus. `track()` in `app.ts` sends counts, timings and
+   preset names, and no analytics call may touch `#corpus`.
 
 ## 🔴 Why there are no `?v=` tokens, and what replaced them
 

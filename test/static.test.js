@@ -18,7 +18,7 @@ const CANONICAL = 'https://llm-demo.nodejavascript.com/';
  * ------------------------------------------------------------------ */
 
 test('no client-side file can send anything anywhere', () => {
-  const clientFiles = ['llm.js', 'trainer-host.js', 'trainer.worker.js', 'app.js', 'corpora.js'];
+  const clientFiles = ['llm.js', 'trainer-host.js', 'trainer.worker.js', 'app.js', 'corpora.js', 'consent.js'];
   const forbidden = [
     /\bfetch\s*\(/,
     /XMLHttpRequest/,
@@ -36,16 +36,20 @@ test('no client-side file can send anything anywhere', () => {
   }
 });
 
-test('the only third-party request on the page is the analytics tag', () => {
-  const urls = [...html.matchAll(/https?:\/\/[^"')\s]+/g)].map((m) => m[0]);
-  // schema.org is a JSON-LD namespace identifier, not a request; the rest are
-  // links a reader may follow, not resources the page loads.
-  const allowedHosts = /googletagmanager\.com|google-analytics\.com|google\.com|github\.com|nodejavascript\.com|schema\.org/;
-  const unexpected = urls.filter((u) => !allowedHosts.test(u));
-  assert.deepEqual(unexpected, [], `unexpected external URL: ${unexpected.join(', ')}`);
-  const loaded = [...html.matchAll(/<(?:script|link)[^>]*(?:src|href)="(https?:\/\/[^"]+)"/g)].map((m) => m[1]);
-  const remote = loaded.filter((u) => !u.startsWith(CANONICAL) && !/googletagmanager\.com\/gtag/.test(u));
-  assert.deepEqual(remote, [], `the page loads something remote: ${remote.join(', ')}`);
+test('the page loads NOTHING from another origin', () => {
+  // This used to allow googletagmanager through, because the tag was in the head.
+  // It is not any more: the consent gate appends it at runtime and only after a
+  // yes, so a page that ships in this shape makes no third-party request at all
+  // until a visitor chooses. If this test ever fails, something has been put back
+  // into the page that a visitor cannot refuse.
+  // A canonical link names this page's own address; it is not a load. Anything
+  // with a remote src, or a remote stylesheet, would be.
+  const loads = [...html.matchAll(/<(script|link)\b[^>]*>/g)].map((m) => m[0]).filter((tag) => !/rel="(canonical|alternate|preconnect|dns-prefetch)"/.test(tag));
+  const loaded = loads
+    .map((tag) => (tag.match(/(?:src|href)="(https?:\/\/[^"]+)"/) || [])[1])
+    .filter(Boolean);
+  assert.deepEqual(loaded, [], `the page loads something remote: ${loaded.join(', ')}`);
+  assert.ok(!/googletagmanager|google-analytics/.test(html), 'no Google tag may sit in the page itself');
 });
 
 test('the textarea is never read into an analytics payload', () => {
@@ -69,6 +73,18 @@ test('every element id the script looks up exists in the page', () => {
   const missing = [...wanted].filter(
     (id) => !generated.has(id) && !dynamic.has(id) && !html.includes(`id="${id}"`)
   );
+  assert.deepEqual(missing, [], `index.html is missing: ${missing.join(', ')}`);
+});
+
+test('every id the cookie gate looks up exists in the page', () => {
+  // A typo here is the quietest failure the site could have: a misspelled id
+  // means an answer button does nothing and the page says nothing about it. The
+  // gate is small enough to check its ids exhaustively.
+  const wanted = new Set([...read('consent.js').matchAll(/getElementById\('([A-Za-z0-9_-]+)'\)/g)].map((m) => m[1]));
+  assert.ok(wanted.has('consentAccept') && wanted.has('consentDecline'), 'both answers must be wired');
+  assert.ok(wanted.has('consentAnalytics'), 'the switch must be wired');
+  assert.ok(wanted.has('consentBtn'), 'the footer door must be wired');
+  const missing = [...wanted].filter((id) => !html.includes(`id="${id}"`));
   assert.deepEqual(missing, [], `index.html is missing: ${missing.join(', ')}`);
 });
 
@@ -201,30 +217,85 @@ test('the sitemap lists exactly the canonical URL and is well formed', () => {
 });
 
 /* ------------------------------------------------------------------ *
- * Analytics — the house standard for a new site
- * ------------------------------------------------------------------ */
+ * Analytics — behind the consent gate
+ * ------------------------------------------------------------------ *
+ *
+ * The site used to carry the Google tag in the head with an opt-out in front of
+ * it. That is not consent: the script is already loaded, the cookie is already
+ * set, and the visitor is being asked to undo something that has happened. The
+ * model now is inputresponse.com's — the tag is not in the page at all, and
+ * consent.js is the only thing that may append it, only after a yes.
+ *
+ * These guards hold the shape of that in place. The behaviour is proved over
+ * HTTP in test/e2e.test.js, which can count real requests to Google. */
 
-test('the analytics tag is wired with the owner opt-out before it', () => {
-  const id = html.match(/gtag\/js\?id=(G-[A-Z0-9]+)/);
-  assert.ok(id, 'the tag is not wired');
-  const measurementId = id[1];
+const consent = read('consent.js');
 
-  const optOutAt = html.indexOf('ga_opt_out');
-  const tagAt = html.indexOf('googletagmanager.com/gtag/js');
-  assert.ok(optOutAt > -1 && optOutAt < tagAt, 'the opt-out must run before the tag loads');
-  assert.ok(html.includes(`ga-disable-${measurementId}`), 'the disable flag must name the real measurement id');
-  assert.ok(html.includes(`?ga=off`) && html.includes(`?ga=on`), 'both opt-out and resume links must be offered');
-  assert.ok(app.includes('scroll_depth'), 'scroll depth is part of the standard');
-  assert.ok(app.includes('element_click'), 'the universal click event is part of the standard');
-  assert.ok(app.includes('send_page_view: false'), 'page views are sent explicitly, never twice');
-  assert.ok(app.includes('page_view'), 'a page view is sent');
+test('consent.js is the only file allowed to name Google, and it loads the tag in one place', () => {
+  assert.ok(!/googletagmanager/.test(app), 'app.js must not know how to load the tag');
+  assert.ok(!/\bgtag\b/.test(app), 'app.js must send events through window.llmTrack, never gtag directly');
+
+  const tagSources = [...consent.matchAll(/googletagmanager\.com\/gtag\/js/g)];
+  assert.equal(tagSources.length, 1, 'the tag is appended from exactly one place');
+  assert.match(consent, /createElement\(\s*['"]script['"]\s*\)/, 'the tag is built at runtime, not written into the page');
+  assert.match(consent, /if \(started \|\| !allowed\(\)\)\s+return;/, 'nothing may append the tag before consent allows it');
+  assert.match(consent, /function allowed\(\)/, 'consent is a named, readable predicate');
 });
 
-test('the analytics id in the page is the one advertised to the script', () => {
-  const id = html.match(/window\.LLM_DEMO_GA_ID\s*=\s*'([^']+)'/);
-  assert.ok(id, 'the page must expose the measurement id to app.js');
-  assert.ok(html.includes(`?id=${id[1]}`), 'the tag must use the same id');
-  assert.ok(html.includes(`ga-disable-${id[1]}`), 'the opt-out must use the same id');
+test('the measurement id rides on the consent script, never in the page', () => {
+  const declared = html.match(/<script[^>]*src="\.\/consent\.js"[^>]*data-ga-id="(G-[A-Z0-9]+)"/);
+  assert.ok(declared, 'the consent script must carry the measurement id as an attribute');
+  assert.ok(!/G-[A-Z0-9]{6,}/.test(html.replace(declared[0], '')), 'the id must appear in the page only on that attribute');
+  assert.ok(consent.includes('script[data-ga-id]'), 'consent.js reads the id from the attribute');
+  assert.ok(consent.includes("OWNER_KEY = 'ga_opt_out'"), 'the owner opt-out key is unchanged');
+  assert.ok(consent.includes("KEY = 'analytics_consent'"), 'the visitor choice is stored under the same key as inputresponse');
+  assert.ok(consent.includes('?ga=off') || consent.includes('/?ga=off'), 'the owner can still leave himself out');
+});
+
+test('the events the house standard asks for live in the gate, not in the page', () => {
+  for (const event of ['page_view', 'element_click', 'scroll_depth', 'send_page_view: false']) {
+    assert.ok(consent.includes(event), `${event} must be sent from consent.js, where the gate is`);
+  }
+  assert.ok(consent.includes('25, 50, 75, 100'), 'scroll depth is marked at 25 / 50 / 75 / 100');
+  // The listeners must be created inside start(), i.e. after the yes. A listener
+  // that exists and stays quiet is not the same promise as no listener at all.
+  // The first `'click'` in the file is the page-wide one, and it sits between
+  // start() and build() — inside the gate, not in the page setup.
+  const startAt = consent.indexOf('function start()');
+  const clickAt = consent.indexOf("'click'");
+  const buildAt = consent.indexOf('function build()');
+  assert.ok(startAt > -1 && clickAt > startAt, 'the click listener is installed only once counting starts');
+  assert.ok(clickAt < buildAt, 'and it is installed by the gate, not by the page setup');
+});
+
+test('the two answers are the same size, the same weight and the same class', () => {
+  const accept = html.match(/<button[^>]*id="consentAccept"[^>]*>/);
+  const decline = html.match(/<button[^>]*id="consentDecline"[^>]*>/);
+  assert.ok(accept && decline, 'both answers must be offered');
+  const cls = (tag) => (tag[0].match(/class="([^"]*)"/) || [])[1];
+  assert.equal(cls(accept), cls(decline), 'the two answers must carry the same class');
+  assert.equal(cls(accept), 'ghost', 'both answers wear the page\'s own secondary button, not the loud one');
+});
+
+test('the panel names the purpose and its switch ships off', () => {
+  assert.match(html, /id="consentAnalytics"[^>]*aria-checked="false"/, 'the switch must arrive off: a pre-ticked box is a default, not a choice');
+  assert.match(html, /Off unless you turn it on/, 'the panel says what the switch does');
+  assert.match(html, /never anything you type and never the text\s+you train on/, 'the panel says what is never sent');
+  assert.match(html, /href="#cookies"/, 'the ask links to the detail rather than carrying it');
+  assert.match(html, /id="cookies"/, 'and that link must resolve to a real heading');
+  assert.match(html, /id="consentDeviceRow"[^>]*hidden/, 'the owner row stays out of sight until it is used');
+  assert.match(html, /id="consentBtn"/, 'the footer keeps one door to change the answer');
+});
+
+test('the banner cannot sit on top of the footer', () => {
+  // Found the hard way on inputresponse: a fixed banner takes the click, so a
+  // footer link was unreachable until a visitor answered a question about
+  // cookies. The page reserves the banner's own height, measured at runtime.
+  const css = read('styles.css');
+  assert.match(css, /padding-bottom:\s*var\(--consent-height/, 'the page must reserve the banner height');
+  assert.match(consent, /setProperty\('--consent-height'/, 'consent.js must measure it, not guess');
+  assert.match(consent, /ResizeObserver/, 'and keep following it when the text re-wraps');
+  assert.match(css, /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/, '`hidden` must beat the display rules the panel switches between');
 });
 
 test('no asset reference carries a version query', () => {
@@ -274,7 +345,7 @@ test('every control that starts disabled is enabled again by the script', () => 
 
 test('nothing in site/ is a stray working file', () => {
   const allowed = new Set([
-    'index.html', 'styles.css', 'app.js', 'llm.js', 'trainer-host.js', 'trainer.worker.js', 'corpora.js',
+    'index.html', 'styles.css', 'app.js', 'consent.js', 'llm.js', 'trainer-host.js', 'trainer.worker.js', 'corpora.js',
     'manifest.webmanifest', 'robots.txt', 'sitemap.xml', 'og.png',
     'favicon.ico', 'favicon.svg', 'favicon-32.png', 'apple-touch-icon.png',
     'android-chrome-192x192.png', 'android-chrome-512x512.png',
