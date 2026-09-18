@@ -227,27 +227,21 @@ test('the analytics id in the page is the one advertised to the script', () => {
   assert.ok(html.includes(`ga-disable-${id[1]}`), 'the opt-out must use the same id');
 });
 
-test('every asset the browser loads carries a cache-busting token', () => {
-  // Cloudflare holds assets at the edge AND in the browser for four hours
-  // whatever headers the server sends, so a deploy with an unchanged token is
-  // invisible to anyone who has already visited. That is not hypothetical: on the
-  // first deploy the page loaded the OLD llm.js and showed preset times that had
-  // already been corrected, because the import had no token on it.
+test('no asset reference carries a version query', () => {
+  // The first fix for a stale-module bug was a `?v=` token on every reference.
+  // That cannot survive TypeScript, which cannot resolve an import specifier with
+  // a query on it — so the mechanism is now `Cache-Control: no-store` on the whole
+  // site, set in the Caddy block. This test keeps the two honest: a query string
+  // creeping back in means somebody has started doing it two ways again, and the
+  // header that actually guarantees freshness is asserted over HTTP by the
+  // end-to-end suite (test/e2e.test.js).
   const files = ['index.html', 'app.js', 'trainer-host.js', 'trainer.worker.js'];
-  const reference = /\.\/([A-Za-z0-9_.-]+\.(?:js|css))(\?[A-Za-z0-9=._-]*)?/g;
-  const tokens = new Set();
-
   for (const file of files) {
     const source = read(file);
-    for (const match of source.matchAll(reference)) {
-      const [, path, query] = match;
-      assert.ok(query && query.startsWith('?v='), `${file} loads ${path} without a ?v= token`);
-      tokens.add(query);
+    for (const match of source.matchAll(/\.\/[A-Za-z0-9_.-]+\.(?:js|css)\?[A-Za-z0-9=._-]*/g)) {
+      assert.fail(`${file} carries a version query again: ${match[0]}`);
     }
   }
-
-  assert.ok(tokens.size >= 1, 'at least one versioned asset');
-  assert.equal(tokens.size, 1, `every asset must carry the same token, found ${[...tokens].join(', ')}`);
 });
 
 /* ------------------------------------------------------------------ *
@@ -263,12 +257,18 @@ test('every control that starts disabled is enabled again by the script', () => 
   ].map((m) => m[1]);
   assert.ok(disabledIds.length >= 3, `expected several controls to start disabled, found ${disabledIds.length}`);
 
-  const loop = app.match(/for \(const id of \[([^\]]+)\]\) \$\(id\)\.disabled = false;/);
-  const loopIds = loop ? [...loop[1].matchAll(/'([A-Za-z0-9_-]+)'/g)].map((m) => m[1]) : [];
+  const enabled = new Set();
+  // $('id').disabled = false  ·  $<HTMLButtonElement>('id').disabled = false
+  for (const m of app.matchAll(/\$[A-Za-z]*\s*(?:<[^>]*>)?\s*\(\s*'([A-Za-z0-9_-]+)'\s*\)\.disabled\s*=\s*false/g)) {
+    enabled.add(m[1]);
+  }
+  // for (const id of ['a', 'b']) { $<HTMLButtonElement>(id).disabled = false; }
+  for (const m of app.matchAll(/for\s*\(\s*const\s+id\s+of\s*\[([^\]]+)\]\s*\)[^}]*?\.disabled\s*=\s*false/gs)) {
+    for (const id of m[1].matchAll(/'([A-Za-z0-9_-]+)'/g)) enabled.add(id[1]);
+  }
 
   for (const id of disabledIds) {
-    const direct = new RegExp(`\\$\\('${id}'\\)\\.disabled = false`).test(app);
-    assert.ok(direct || loopIds.includes(id), `${id} starts disabled and nothing ever enables it`);
+    assert.ok(enabled.has(id), `${id} starts disabled and nothing ever enables it`);
   }
 });
 

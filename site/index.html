@@ -6,7 +6,7 @@
     <title>Train a language model in your browser | llm-demo</title>
     <meta
       name="description"
-      content="A small GPT written from scratch in JavaScript: tokenizer, self-attention, backpropagation, AdamW. Paste text, train it in your browser, test it."
+      content="A small GPT written from scratch in TypeScript: tokenizer, self-attention, backpropagation, AdamW. Paste text, train it in your browser, test it."
     />
     <link rel="canonical" href="https://llm-demo.nodejavascript.com/" />
     <meta name="theme-color" content="#0b0714" />
@@ -35,7 +35,7 @@
     />
     <meta name="twitter:image" content="https://llm-demo.nodejavascript.com/og.png" />
 
-    <link rel="stylesheet" href="./styles.css?v=2" />
+    <link rel="stylesheet" href="./styles.css" />
 
     <script type="application/ld+json">
       {
@@ -48,7 +48,7 @@
             "applicationCategory": "DeveloperApplication",
             "operatingSystem": "Any browser",
             "browserRequirements": "JavaScript, Web Workers",
-            "description": "A small transformer language model written from scratch in JavaScript. It trains on text you paste, in your browser, and can then be sampled from.",
+            "description": "A small transformer language model written from scratch in TypeScript. It trains on text you paste, in your browser, and can then be sampled from.",
             "offers": { "@type": "Offer", "price": "0", "priceCurrency": "CAD" },
             "isAccessibleForFree": true
           },
@@ -60,7 +60,7 @@
                 "name": "Is this a real language model?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Yes. It is a transformer with token and position embeddings, causal multi-head self-attention, a feed-forward block, layer norms and residual connections, trained by backpropagation with AdamW. It is small — thousands to hundreds of thousands of parameters — and it trains in your browser on one CPU core in seconds."
+                  "text": "Yes. It is a transformer with token and position embeddings, causal multi-head self-attention, a feed-forward block, layer norms and residual connections, trained by backpropagation with AdamW. It is written from scratch in TypeScript, compiled to plain JavaScript, and it trains in your browser on one CPU core in seconds."
                 }
               },
               {
@@ -84,7 +84,7 @@
                 "name": "Can I keep the model I trained?",
                 "acceptedAnswer": {
                   "@type": "Answer",
-                  "text": "Yes. The weights download as plain JSON, with the vocabulary and the exact configuration, and a training report with the loss curve can be downloaded beside it."
+                  "text": "Yes. The weights download as plain JSON, with the vocabulary and the exact configuration, and a training report with the loss curve and the samples can be downloaded beside it. The whole model is also readable: the compiled JavaScript is served at /llm.js, and the TypeScript it is built from is public on GitHub."
                 }
               }
             ]
@@ -115,7 +115,7 @@
       gtag('js', new Date());
       window.LLM_DEMO_GA_ID = 'G-K9D55KQ38J';
     </script>
-    <script type="module" src="./app.js?v=2"></script>
+    <script type="module" src="./app.js"></script>
   </head>
 
   <body>
@@ -143,7 +143,7 @@
       <nav>
         <a href="#how">How it works</a>
         <a href="#honesty">What it is not</a>
-        <a href="./llm.js?v=2">The source</a>
+        <a href="./llm.js">The source</a>
       </nav>
     </header>
 
@@ -151,14 +151,18 @@
       <section class="hero">
         <h1>Train a language model in your browser</h1>
         <p class="lede">
-          A small GPT — tokenizer, self-attention, backpropagation and AdamW — written from scratch in plain
-          JavaScript. No framework, no build step, no server, no API key. Paste some text, press one button, watch
-          the loss fall, then test the model you just made.
+          A small GPT — tokenizer, self-attention, backpropagation and AdamW — written from scratch in TypeScript
+          and compiled to the plain JavaScript your browser runs. No framework, no bundler, no runtime dependencies,
+          no server, no API key. Paste some text, press one button, watch the loss fall, then test the model you just
+          made.
         </p>
         <ul class="facts">
           <li><b>Nothing you type leaves this page.</b> It trains in a Web Worker on your own machine.</li>
           <li><b>Seconds, not hours.</b> About twelve thousand parameters in about fifteen seconds.</li>
-          <li><b>The whole model is one readable file.</b> <a href="./llm.js?v=2">llm.js</a> — read it.</li>
+          <li>
+            <b>Read all of it.</b> <a href="./llm.js">The compiled model</a>, and the
+            <a href="https://github.com/nodejavascript/llm-demo">TypeScript it is built from</a>.
+          </li>
         </ul>
       </section>
 
@@ -350,8 +354,8 @@
         <span><b>llm-demo</b> · <a href="https://nodejavascript.com/">nodejavascript.com</a></span>
       </div>
       <p class="footer-links">
-        <a href="./llm.js?v=2">The model source</a> ·
-        <a href="https://github.com/nodejavascript/neataptic-ts" rel="noopener">A neural-network library, in TypeScript</a> ·
+        <a href="./llm.js">The compiled model</a> ·
+        <a href="https://github.com/nodejavascript/llm-demo" rel="noopener">The TypeScript source and the tests</a> ·
         <a href="#top">Back to top</a>
       </p>
       <p class="footer-copy">© 2026 llm-demo.nodejavascript.com. All rights reserved.</p>
