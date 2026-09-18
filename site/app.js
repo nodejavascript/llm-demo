@@ -255,9 +255,15 @@ function drawLoss() {
         ctx.stroke();
     }
     if (values.length < 2) {
+        // The waiting state used to be one dim line of text in an otherwise empty box,
+        // and an empty box reads as a chart that is BROKEN rather than one that is
+        // ready — George scrolled past it and asked where the training chart had gone.
+        // So the empty state is now an invitation, and it says what will happen.
         ctx.fillStyle = styles.getPropertyValue('--muted').trim() || '#8b86a3';
+        ctx.font = '600 13px system-ui, sans-serif';
+        ctx.fillText('The loss curve is drawn here as it trains.', 12, height / 2 - 4);
         ctx.font = '12px system-ui, sans-serif';
-        ctx.fillText('loss will be plotted here', 8, height / 2 + 4);
+        ctx.fillText('Press “Create the model” and watch the line fall.', 12, height / 2 + 17);
         return;
     }
     const max = Math.max(...values);
@@ -270,10 +276,23 @@ function drawLoss() {
     ctx.beginPath();
     values.forEach((v, i) => (i === 0 ? ctx.moveTo(x(i), y(v)) : ctx.lineTo(x(i), y(v))));
     ctx.stroke();
+    // The end of the curve is marked and labelled, because the shape is the story and
+    // the last point is where it has got to. The percentage is the drop from the
+    // first loss, which is the number that means something to a reader with no
+    // machine-learning background: how far it has fallen from where it started.
+    const last = values[values.length - 1];
+    ctx.fillStyle = line;
+    ctx.beginPath();
+    ctx.arc(x(values.length - 1) - 1.5, y(last), 2.8, 0, Math.PI * 2);
+    ctx.fill();
     ctx.fillStyle = styles.getPropertyValue('--muted').trim() || '#8b86a3';
     ctx.font = '11px system-ui, sans-serif';
     ctx.fillText(max.toFixed(2), 4, 12);
     ctx.fillText(min.toFixed(2), 4, height - 4);
+    const drop = values[0] > 0 ? Math.round((1 - last / values[0]) * 100) : 0;
+    ctx.textAlign = 'right';
+    ctx.fillText(`${last.toFixed(2)} — down ${drop}% from the start`, width - 6, 12);
+    ctx.textAlign = 'left';
 }
 function setStatus(message, kind = '') {
     const el = $('statusMsg');
