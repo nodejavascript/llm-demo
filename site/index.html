@@ -93,28 +93,18 @@
       }
     </script>
 
-    <script>
-      // Owner opt-out: ?ga=off stops this browser being counted, ?ga=on undoes it.
-      (function () {
-        var params = new URLSearchParams(location.search);
-        try {
-          if (params.get('ga') === 'off') localStorage.setItem('ga_opt_out', '1');
-          if (params.get('ga') === 'on') localStorage.removeItem('ga_opt_out');
-          if (localStorage.getItem('ga_opt_out') === '1') window['ga-disable-G-K9D55KQ38J'] = true;
-        } catch (e) {
-          /* storage blocked — the site works either way */
-        }
-      })();
-    </script>
-    <script async src="https://www.googletagmanager.com/gtag/js?id=G-K9D55KQ38J"></script>
-    <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        window.dataLayer.push(arguments);
-      }
-      gtag('js', new Date());
-      window.LLM_DEMO_GA_ID = 'G-K9D55KQ38J';
-    </script>
+    <!-- NOTHING FROM GOOGLE IS IN THIS PAGE.
+
+         There is no gtag script here and no inline analytics block, which is the
+         whole point: consent.js appends the tag only after a visitor says yes, so
+         a visit that refuses makes no request to Google at all and gets no cookie.
+         The measurement id rides on the consent script as an attribute, and a
+         browser with scripting off contacts nobody.
+
+         This file is the page. consent.js is the gate, and the end-to-end tests
+         assert both halves of that: no choice means no request and no window.gtag;
+         a yes means the tag loads and the events flow. -->
+    <script src="./consent.js" data-ga-id="G-K9D55KQ38J" defer></script>
     <script type="module" src="./app.js"></script>
   </head>
 
@@ -328,14 +318,97 @@
         <p>
           The text you paste is trained on in a Web Worker on your own machine and is never uploaded — there is no
           request in the model code that could carry it, and a test asserts that. The model exists only in this tab
-          and disappears when you close it.
+          and disappears when you close it. <b>That is true whatever you answer about cookies.</b>
+        </p>
+        <h3 id="cookies">Cookies</h3>
+        <p>
+          There are no accounts here and nothing is stored about you. That leaves one cookie, and it is optional:
+          Google Analytics, which records anonymous page, click and scroll events — never anything you type, and
+          never the text you train on. <b>Google's script is not in this page at all.</b> It is added only if you
+          allow it, so a visit that <i>rejects</i> makes no request to Google and receives no cookie.
         </p>
         <p class="muted small">
-          The page carries Google Analytics, which records anonymous page, click and scroll events — never anything
-          you type. <a href="?ga=off">Stop counting this browser</a> · <a href="?ga=on">resume</a>.
+          Your answer is remembered in your own browser's storage, not in a cookie — setting a cookie to record a
+          cookie decision would be its own small joke. You can change it whenever you like from <b>Cookie settings</b>
+          in the footer, which opens the same panel that <b>Settings</b> does while the question is up. The address
+          parameters <code>?ga=off</code> and <code>?ga=on</code> remain the owner's own switch — how whoever runs this
+          site keeps out of his own numbers.
         </p>
       </section>
     </main>
+
+    <!-- The cookie question, and the panel behind it.
+
+         Nothing appears here until consent.js has found a measurement id, and the
+         bar asks once: refusing is an answer, and it is not asked again. Both
+         views share the one fixed bar rather than a second dialog opening over
+         it, because this is the element whose height is measured and reserved at
+         the bottom of the page — the footer must stay clickable while the
+         question is up. -->
+    <div class="consent" id="consentBar" role="dialog" aria-labelledby="consentTitle" hidden>
+      <div class="consentAsk" id="consentAsk">
+        <h2 class="consentTitle" id="consentTitle">Cookies are your call</h2>
+        <p class="consentText">
+          Analytics is the only cookie here, and it is not loaded until you say yes. The text you paste is never sent
+          to anyone, whatever you answer. <a href="#cookies">Every cookie, and what it does</a>
+        </p>
+      </div>
+
+      <!-- Every purpose is named, and the one switch starts OFF: a box that
+           arrives already ticked is a default, not a choice. There is no
+           "strictly necessary" row to go with it, because this site has no
+           strictly necessary cookie — the model lives in the tab and is gone when
+           the tab closes. -->
+      <div class="consentPrefs" id="consentPrefs" hidden>
+        <div class="consentHead">
+          <h2 class="consentTitle">Cookie preferences</h2>
+          <button id="consentClose" class="consentClose" type="button" aria-label="Close cookie preferences">
+            &times;
+          </button>
+        </div>
+        <ul class="consentList">
+          <li class="consentRow">
+            <div>
+              <p class="consentRowName">Analytics</p>
+              <p class="consentRowWhy">
+                Google Analytics. It sets its own cookies and sends your page views, which controls you press and how
+                far down a page you read to Google in the United States — never anything you type and never the text
+                you train on. Off unless you turn it on.
+              </p>
+            </div>
+            <button
+              id="consentAnalytics"
+              class="consentSwitch"
+              type="button"
+              role="switch"
+              aria-checked="false"
+              aria-label="Analytics cookies"
+            >
+              <span class="consentDot" aria-hidden="true"></span><span id="consentAnalyticsWord">Off</span>
+            </button>
+          </li>
+          <li class="consentRow" id="consentDeviceRow" hidden>
+            <div>
+              <p class="consentRowName">This device</p>
+              <p class="consentRowWhy">
+                Leaves your own visits out of the numbers whatever the choice above says — it is how the person who
+                runs this site stays out of their own count.
+              </p>
+            </div>
+            <a id="countToggle" class="linkish" href="/?ga=off">Stop counting my visits</a>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Accept all first, Reject all beside it. What makes the two equal is not
+           the order: they carry the same class, the same size and the same
+           weight, and neither is drawn with a focus ring when the bar opens. -->
+      <div class="consentActions">
+        <button id="consentAccept" class="ghost" type="button">Accept all</button>
+        <button id="consentDecline" class="ghost" type="button">Reject all</button>
+      </div>
+      <button id="consentSettings" class="linkish consentSettings" type="button">Settings</button>
+    </div>
 
     <footer class="site-footer">
       <div class="footer-brand">
@@ -356,6 +429,7 @@
       <p class="footer-links">
         <a href="./llm.js">The compiled model</a> ·
         <a href="https://github.com/nodejavascript/llm-demo" rel="noopener">The TypeScript source and the tests</a> ·
+        <button id="consentBtn" class="linkish" type="button">Cookie settings</button> ·
         <a href="#top">Back to top</a>
       </p>
       <p class="footer-copy">© 2026 llm-demo.nodejavascript.com. All rights reserved.</p>
