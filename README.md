@@ -1,4 +1,4 @@
-# llm-demo
+# llm-demo.nodejavascript.com
 
 A small GPT — tokenizer, token and position embeddings, causal multi-head
 self-attention, a feed-forward block, layer norms, residuals, softmax
