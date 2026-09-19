@@ -112,19 +112,23 @@ test('titles and descriptions are inside the house limits', () => {
   );
 });
 
-test('the document title carries the subdomain and the domain', () => {
-  // George, 19 Sep 2026: "the document title should be the sub and domain name".
+test('the html title IS the full domain name', () => {
+  // 🔴 George, 19 Sep 2026, verbatim: "the html title should be the full domain name".
   //
-  // The title used to end in a bare product label ("| llm-demo"), which names
-  // neither the subdomain nor the domain. On a site whose identity IS its origin —
-  // nine sibling subdomains, one per app — a reader looking at a tab, a bookmark or
-  // a share card has to be able to tell WHICH site this is, so the title carries the
-  // host. The two limits fight: the house title cap is 60 characters and the host
-  // alone is 27, which leaves 30 for the description. That is why the wording is
-  // "Train a small language model" and not the longer <h1> — measured, not guessed.
+  // He said it twice because the first version got it half right. The opening
+  // instruction was "the document title should be the sub and domain name"; the
+  // shipped version kept a description in front of it ("Train a small language model |
+  // llm-demo.nodejavascript.com") and he corrected it: the title IS the domain, and
+  // nothing else.
+  //
+  // So this asserts EQUALITY, not containment — the weaker assertion is exactly what
+  // let the description stay in. It also dissolves a fight the earlier version lost:
+  // the house cap is 60 characters and the host is 27, so anything descriptive had to
+  // be squeezed to fit. A title that IS the host has no such problem, and the <h1>,
+  // the meta description and the social tags still carry every word a reader needs.
   const title = html.match(/<title>([^<]*)<\/title>/)[1];
   const host = new URL(CANONICAL).host;
-  assert.ok(title.includes(host), `the title must contain the host ${host}: ${title}`);
+  assert.equal(title, host, `the title must be exactly the host, not "${title}"`);
   const siteName = html.match(/<meta\s+property="og:site_name"\s+content="([^"]*)"/)[1];
   assert.equal(siteName, host, `og:site_name should be the host, not a product label: ${siteName}`);
 });

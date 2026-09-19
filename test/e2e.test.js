@@ -114,7 +114,19 @@ test('every asset is served no-store, which is what keeps a deploy visible', asy
 test('the page loads with no errors and previews the model honestly', async () => {
   const { context, page, pageErrors, consoleErrors } = await openPage();
 
-  assert.equal(await page.title(), 'Train a language model in your browser | llm-demo');
+  // 🔴 Derived from the page's OWN canonical, not hard-coded and not from the URL.
+  // This assertion used to pin the exact string "Train a language model in your
+  // browser | llm-demo", so changing the title broke the browser suite — which is how
+  // a test becomes a record of what the copy WAS rather than a check on the rule. The
+  // served URL is no good either: the suite runs against 127.0.0.1, so its host is a
+  // random port. The canonical is the site's declared identity, so the rule states
+  // that the title IS that host — and it can never drift out of date again.
+  const canonicalHost = await page.$eval('link[rel="canonical"]', (el) => new URL(el.href).host);
+  assert.equal(
+    await page.title(),
+    canonicalHost,
+    'the HTML title must be the full domain name, the host of the page’s canonical URL'
+  );
   assert.equal(await page.locator('h1').count(), 1, 'exactly one h1');
   assert.match(await page.locator('#trainBtn').textContent(), /12,821 parameters/);
 
