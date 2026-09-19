@@ -4,7 +4,12 @@
    ============================================================ */
 
 :root {
-  --bg: #08050d;
+  /* 🔴 THIS SITE'S OWN BACKGROUND, AND IT HAS TO STAY ITS OWN (standard part 5b).
+     It was `#08050d` — the exact value the APEX used — so the reference
+     implementation and its parent were the same page to anyone glancing at a tab.
+     The register measured it, and the compliance check flagged it. A violet-black
+     of this site's own hue, so the tab, the page and the header bar agree. */
+  --bg: #0d0418;
   --bg-soft: #0e0817;
   --surface: #140b22;
   --surface-2: #1b102c;
