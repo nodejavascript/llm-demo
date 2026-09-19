@@ -397,13 +397,21 @@
         // moves, whatever the reason.
         if (typeof ResizeObserver === 'function')
             new ResizeObserver(reserveSpace).observe(bar);
-        // The footer door. It opens the PANEL rather than asking the question again:
-        // the reader has already answered, and something called settings that repeats
-        // the question is not a settings control. The answer is left alone, so nothing
-        // stops running just because somebody looked.
-        var reopen = document.getElementById('consentBtn');
-        if (reopen)
-            reopen.addEventListener('click', openPrefs);
+        // 🔴 THE FOOTER DOOR IS DELEGATED, NOT BOUND — and this is what makes the gate
+        // work on a REACT site at all. Binding `#consentBtn` directly ran ONCE, at load;
+        // on `password-please` the footer is a React component that does not exist at
+        // that moment, so no listener was ever attached. The button then rendered, looked
+        // right in every screenshot, and did nothing when pressed. This site's footer is
+        // static HTML so it happened to work here — which is exactly how a bug hides in
+        // the reference implementation. It opens the PANEL rather than asking the
+        // question again: the reader has already answered, and something called settings
+        // that repeats the question is not a settings control. The answer is left alone,
+        // so nothing stops running just because somebody looked.
+        document.addEventListener('click', (event) => {
+            const target = event.target;
+            if (target?.closest?.('#consentBtn'))
+                openPrefs();
+        }, true);
         if (!read(KEY)) {
             // Nothing shows while the visitor decides nothing: analytics is not running,
             // so the banner is the only thing asking.
