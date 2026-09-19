@@ -80,12 +80,90 @@ test('every id the cookie gate looks up exists in the page', () => {
   // A typo here is the quietest failure the site could have: a misspelled id
   // means an answer button does nothing and the page says nothing about it. The
   // gate is small enough to check its ids exhaustively.
-  const wanted = new Set([...read('consent.js').matchAll(/getElementById\('([A-Za-z0-9_-]+)'\)/g)].map((m) => m[1]));
+  //
+  // Two ways the gate names an id, and BOTH have to be read, or this test stops
+  // seeing the footer door: getElementById for the controls it wires directly, and
+  // closest('#…') for the door it delegates. The door used to be `getElementById`
+  // too, and when it moved to delegation this test failed for the right reason.
+  //
+  // ⚠️ This reads the BUILT file, so the pattern has to match what tsc emits, not
+  // what the TypeScript source says: `closest?.('…')` comes out with the optional
+  // call kept. A regex written against the source looks right and silently matches
+  // nothing — which is how the first attempt at this test failed twice.
+  const gate = read('consent.js');
+  const wanted = new Set([
+    ...[...gate.matchAll(/getElementById\('([A-Za-z0-9_-]+)'\)/g)].map((m) => m[1]),
+    ...[...gate.matchAll(/closest\s*\??\.?\s*\(\s*'#([A-Za-z0-9_-]+)'/g)].map((m) => m[1]),
+  ]);
   assert.ok(wanted.has('consentAccept') && wanted.has('consentDecline'), 'both answers must be wired');
   assert.ok(wanted.has('consentAnalytics'), 'the switch must be wired');
   assert.ok(wanted.has('consentBtn'), 'the footer door must be wired');
   const missing = [...wanted].filter((id) => !html.includes(`id="${id}"`));
   assert.deepEqual(missing, [], `index.html is missing: ${missing.join(', ')}`);
+});
+
+test('the footer door is DELEGATED, not bound when the script loads', () => {
+  // 🔴 This test exists because the bug it catches shipped once, silently. The gate
+  // bound `#consentBtn` with addEventListener as the script ran; on a React site the
+  // footer does not exist yet at that moment, so no listener was ever attached — the
+  // button rendered, looked correct in every screenshot, and did nothing. This site's
+  // footer is static HTML, so it worked here and the bug stayed hidden in the
+  // reference implementation until password-please's e2e suite caught it.
+  //
+  // On this site both forms work, so the browser cannot tell them apart. The only way
+  // to hold the rule is to read the source, which is what this does.
+  const gate = read('consent.js');
+  assert.match(gate, /document\.addEventListener\(\s*'click'/, 'the door must be listened for on the document');
+  assert.match(gate, /closest\s*\??\.?\s*\(\s*'#consentBtn'/, 'the door must be matched as the click rises');
+  // The signal, stated plainly: a delegated gate has NO reason to fetch the door by
+  // id. The first version of this line tried to match `getElementById('consentBtn')`
+  // followed by `addEventListener`, which cannot work — the code that shipped the bug
+  // put the element in a variable and bound it on the NEXT line, so no pattern
+  // anchored to that call can ever see the binding. What is always true is the
+  // absence of the lookup, and that is checkable.
+  assert.doesNotMatch(
+    gate,
+    /getElementById\('consentBtn'\)/,
+    'a delegated gate must not look the footer door up by id at all'
+  );
+});
+
+test('the two checks above can actually see the bug', () => {
+  // 🔴 A check that cannot fail is worse than no check, and this one was written
+  // wrong first: the patterns were aimed at the TypeScript source while the test
+  // reads the emitted JavaScript, so both matched nothing and the suite reported
+  // failures for a fix that was already in place — twice. A false failure is the
+  // most expensive kind, because it teaches the reader to distrust the gate.
+  //
+  // So the patterns are now run against the bug itself, in the exact shape tsc
+  // emitted when it shipped: `var reopen = document.getElementById('consentBtn')`.
+  // If the detection logic ever stops recognising that, this fails loudly instead
+  // of the suite quietly passing a gate with a dead door.
+  const buggy = [
+    "var reopen = document.getElementById('consentBtn');",
+    'if (reopen)',
+    "    reopen.addEventListener('click', openPrefs);",
+  ].join('\n');
+
+  const doorIds = (text) => [
+    ...[...text.matchAll(/getElementById\('([A-Za-z0-9_-]+)'\)/g)].map((m) => m[1]),
+    ...[...text.matchAll(/closest\s*\??\.?\s*\(\s*'#([A-Za-z0-9_-]+)'/g)].map((m) => m[1]),
+  ];
+
+  // The first check must SEE the door in the buggy form — that is how the id stays
+  // verified against the page no matter which of the two mechanisms wires it.
+  assert.ok(doorIds(buggy).includes('consentBtn'), 'the id scan must see the door when it is bound directly');
+  // The second must REJECT the buggy form and ACCEPT the delegated one.
+  assert.match(buggy, /getElementById\('consentBtn'\)/);
+  assert.doesNotMatch(
+    "document.addEventListener('click', (event) => { if (target?.closest?.('#consentBtn')) openPrefs(); }, true);",
+    /getElementById\('consentBtn'\)/
+  );
+  // And the delegated pattern must match what tsc emits, optional call and all.
+  assert.ok(
+    doorIds("if (target?.closest?.('#consentBtn')) openPrefs();").includes('consentBtn'),
+    'the delegated form must be readable in the emitted output'
+  );
 });
 
 test('the script does not look up an id the page dropped', () => {
