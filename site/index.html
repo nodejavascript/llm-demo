@@ -148,7 +148,7 @@
         </p>
         <ul class="facts">
           <li><b>Nothing you type leaves this page.</b> It trains in a Web Worker on your own machine.</li>
-          <li><b>Seconds, not hours.</b> Fifteen thousand to a quarter of a million parameters, trained on your own machine in half a minute to five minutes.</li>
+          <li><b>Seconds, not hours.</b> Around seventy thousand to two hundred thousand parameters, trained on your own machine in about twenty seconds to four minutes.</li>
           <li>
             <b>Read all of it.</b> <a href="./llm.js">The compiled model</a>, and the
             <a href="https://github.com/nodejavascript/llm-demo">TypeScript it is built from</a>.
@@ -175,8 +175,9 @@
         <h2><span class="step">2</span> Choose the size of the model</h2>
         <p class="sub">
           Bigger is slower — and worth it only if it is allowed to finish. Every preset here is trained long enough
-          to start forming real words, which is why none of them is instant. The estimate next to each is measured
-          on a desktop CPU; yours may differ, and the page reports the rate it is really achieving once it starts.
+          to produce readable text — not just the right vocabulary in the wrong order — which is why none of them
+          is instant. The estimate next to each is measured on a desktop CPU; yours may differ, and the page
+          reports the rate it is really achieving once it starts.
         </p>
         <div class="chips presets" id="presetButtons" role="group" aria-label="Choose a model size"></div>
         <div class="stats" id="modelStats"></div>
@@ -188,8 +189,9 @@
         <p class="sub">
           This is real training: forward pass, backward pass, and an optimiser step, over and over, on your machine.
           You can stop it at any point and test what it has learned so far — but stopping early is the one thing that
-          produces nonsense. Until the loss is low the model has learned which characters are common and not yet
-          which characters follow which, so it emits the right alphabet in the wrong order.
+          produces nonsense: until the loss is low the model has learned which words (or letters) are common and
+          not yet which follow which, so it emits the right pieces in the wrong order. Press <b>Sample from it</b>
+          when it stops and the page will tell you whether what came out is readable.
         </p>
         <div class="row">
           <button class="primary" id="trainBtn" type="button">Create the model</button>
@@ -226,7 +228,7 @@
         </p>
         <label class="field">
           <span class="label">Start it off (optional)</span>
-          <input id="prompt" type="text" placeholder="leave empty, or type a few characters" spellcheck="false" />
+          <input id="prompt" type="text" placeholder="leave empty, or type a word it has seen" spellcheck="false" />
         </label>
         <div class="sliders">
           <label class="field">
@@ -248,6 +250,25 @@
           <button class="ghost" id="downloadReport" type="button" disabled>Training report</button>
         </div>
         <p class="status" id="genMsg" role="status" aria-live="polite"></p>
+        <p class="verdict" id="verdict" role="status" aria-live="polite"></p>
+        <details class="lookfor">
+          <summary>How to tell whether it worked</summary>
+          <p>
+            <b>Working:</b> real words in the right order, and the shape of your own document — its line
+            breaks, its names, its formatting. A list of names comes back as <i>new</i> names that could
+            have been in the list. Prose comes back as sentences that read.
+          </p>
+          <p>
+            <b>Not there yet:</b> real letters in nonsense order, or the same line over and over, or one
+            wall of text with no line breaks. That means it stopped before it had trained enough — run a
+            bigger preset, or the same preset on a shorter text.
+          </p>
+          <p>
+            The verdict above is measured, not an opinion: it counts how much of what you are looking at
+            also occurs in the text you gave it, and compares that with the bar its own test suite holds
+            the build to.
+          </p>
+        </details>
         <div id="samples" class="samples"></div>
         <p class="small muted">
           Vocabulary the model actually learned from your text:
@@ -260,8 +281,13 @@
         <p class="sub">The whole thing, in the order the data moves through it.</p>
         <ol class="how">
           <li>
-            <b>Tokeniser — character level.</b> The vocabulary is built from your text: every distinct character
-            becomes a token. No vocabulary file is downloaded, because the text makes its own.
+            <b>Tokeniser — the level follows your text.</b> The vocabulary is built from what you paste. A
+            document of <b>prose</b> is split into <b>words</b>, because words repeat and a word is the unit a
+            reader reads. A <b>list</b> — names, products, one item per line — is split into
+            <b>characters</b>, because there every “word” occurs once, so a word vocabulary would just be a
+            copy of your list and the model could only recite it; at character level it can compose new
+            entries from real letters instead. You are never asked which — the shape of the text decides,
+            and the model panel shows which one it picked.
           </li>
           <li>
             <b>Embeddings.</b> Each token becomes a vector, and a second vector is added for its position, so the
@@ -308,8 +334,9 @@
           <div>
             <h3>It is not</h3>
             <ul>
-              <li>A large language model. It is thousands to hundreds of thousands of parameters; GPT-2 small is 124 million, and a frontier model is larger again by orders of magnitude.</li>
-              <li>Trained on the world. It only knows the text you gave it — outside that text it produces plausible-looking noise, which is the honest failure mode of a tiny model.</li>
+              <li>A large language model. It is around seventy thousand to two hundred thousand parameters; GPT-2 small is 124 million, and a frontier model is larger again by orders of magnitude.</li>
+              <li>Trained on the world. It only knows the text you gave it — outside that text it reproduces the shapes it learned, which is the honest failure mode of a tiny model.</li>
+              <li>Comprehending anything. Trained to the end it reproduces your text very closely, and that is memorisation — the right outcome for a demo this size. It does not understand what it is writing, and it cannot answer a question about the text.</li>
               <li>A substitute for a GPU. One CPU core in a browser is the whole budget, which is exactly why the demo is built this way: the mechanism is the point.</li>
             </ul>
           </div>
@@ -333,9 +360,7 @@
         <p class="muted small">
           Your answer is remembered in your own browser's storage, not in a cookie — setting a cookie to record a
           cookie decision would be its own small joke. You can change it whenever you like from <b>Cookie settings</b>
-          in the footer, which opens the same panel that <b>Settings</b> does while the question is up. The address
-          parameters <code>?ga=off</code> and <code>?ga=on</code> remain the owner's own switch — how whoever runs this
-          site keeps out of his own numbers.
+          in the footer, which opens the same panel that <b>Settings</b> does while the question is up.
         </p>
       </section>
     </main>
@@ -352,8 +377,10 @@
       <div class="consentAsk" id="consentAsk">
         <h2 class="consentTitle" id="consentTitle">Cookies are your call</h2>
         <p class="consentText">
-          Analytics is the only cookie here, and it is not loaded until you say yes. The text you paste is never sent
-          to anyone, whatever you answer. <a href="#privacy">See Privacy</a>
+          <b>Accept all to help decide what gets built next.</b> The numbers show which parts people actually use,
+          and that is what the work follows. Analytics is the only cookie here, it is not loaded until you say yes,
+          and the text you paste is never sent to anyone — whatever you answer.
+          <a href="#privacy">See Privacy</a>
         </p>
       </div>
 
@@ -403,9 +430,19 @@
         </ul>
       </div>
 
-      <!-- Accept all first, Reject all beside it. What makes the two equal is not
-           the order: they carry the same class, the same size and the same
-           weight, and neither is drawn with a focus ring when the bar opens. -->
+      <!-- 🔴 THE COPY MAY MAKE THE CASE FOR ACCEPTING. THE CONTROLS MAY NOT.
+           George asked for the ask to invite a yes — *"accept all to help the future
+           development of this game, something like that"* — and that is allowed: a site
+           is entitled to say why it wants the answer it wants, and a bar that pretends
+           to be indifferent is not more honest, only vaguer.
+
+           What is NOT allowed is stacking the deck, and the two are easy to confuse.
+           Reject all keeps the same class, the same size, the same weight and the same
+           distance from the edge; it is not pushed into a second click, a dead link or
+           a greyer grey; and neither button is drawn with a focus ring when the bar
+           opens. **Inviting a yes is honest. Obstructing the refusal is not.** If a
+           future change makes Reject all harder to press than Accept all, that change
+           is wrong however good the wording above it is. -->
       <div class="consentActions">
         <button id="consentAccept" class="ghost" type="button">Accept all</button>
         <button id="consentDecline" class="ghost" type="button">Reject all</button>

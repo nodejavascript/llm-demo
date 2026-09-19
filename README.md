@@ -32,7 +32,7 @@ demonstrates the mechanism, not the scale, and the page says so.
 | `test/llm.test.js` | unit: gradients, training, determinism, sampling |
 | `test/static.test.js` | guards: page/script agreement, SEO limits, icon bytes, privacy, dead controls |
 | `test/training.test.js` | the fast guarantee: each preset is trained long enough, and sampling truncates by default |
-| `test/quality.test.js` | the slow guarantee: trains each preset and asserts the output is no longer noise |
+| `test/quality.test.js` | the slow guarantee: trains each preset and asserts the words are in the right order, not just the right set |
 | `test/e2e.test.js` | end-to-end: a real Chrome against a real server |
 | `tools/bench.js` | measured throughput and sample quality per preset |
 | `tools/probe-prose.mjs` | what it does with prose (a diary) rather than with a list — the honest limit |
@@ -48,8 +48,8 @@ demonstrates the mechanism, not the scale, and the page says so.
 ```bash
 npm run build                  # tsc → site/
 npm test                       # build + unit + guards + the fast training checks (~1 s)
-npm run test:quality           # build + the training guarantee — slow: ~8 min for all three
-                               #   presets, or PRESET=quick npm run test:quality ≈ 35 s
+npm run test:quality           # build + the training guarantee — slow: ~14 min for both
+                               #   levels of all three presets, or PRESET=quick ≈ 70 s
 npm run test:e2e               # build + the browser suite (~1 min; needs Chrome)
 npm run test:all               # everything
 node tools/bench.js            # what each preset really costs, with samples
@@ -63,7 +63,7 @@ npm run deploy                 # publish
 
 ## Tests
 
-**Unit and guards (48).** The load-bearing one is a numerical gradient check of
+**Unit and guards (51).** The load-bearing one is a numerical gradient check of
 every parameter array against the analytic gradients. It is the test that makes
 the hand-derived backpropagation trustworthy, and it is why the two real bugs
 found while building this were caught rather than shipped: an unzeroed backward
@@ -73,7 +73,7 @@ for layer 0 read layer 1's numbers). Both guards are themselves guarded — the
 suite proves the gradient check *can* fail, and that the dead-control check
 catches a button that ships disabled and is never enabled.
 
-**The training guarantee (5, and the half that matters is slow).** Everything
+**The training guarantee (7, and the half that matters is slow).** Everything
 above asserts *mechanism* — that the gradients are right, that the vocabulary
 round-trips, that the shapes compose. All of it passed while the shipped presets
 were producing word-shaped noise, because nothing checked that the model had
@@ -81,12 +81,12 @@ trained **enough to be worth sampling from**.
 
 Two files assert *outcome* instead. `test/training.test.js` holds the
 configuration to the measurement: each preset's step count must be at or above the
-number its shape is measured to need; a dearer preset must cost more time and be a
-bigger model; the advertised seconds must be arithmetically possible at the
-measured rate; `sample()` must truncate by default, asserted **by identity** so
-that with a fixed seed the no-argument call equals the explicit good defaults; the
-page's top-k slider must not default to 0; and `plannedSteps()` must return the
-preset's full step count on a realistic corpus.
+number its shape is measured to need; a dearer preset must cost more *work* (steps ×
+parameters); the advertised seconds must be arithmetically possible at the measured
+rate; `sample()` must truncate by default, asserted **by identity** so that with a
+fixed seed the no-argument call equals the explicit good defaults; the page's top-k
+slider must not default to 0; and `plannedSteps()` must return the preset's full
+step count on a realistic corpus.
 
 That last one exists because **the cap was the second half of the same bug**. The
 host capped every run at 40 passes over the corpus — computed from the *corpus*,
@@ -98,30 +98,90 @@ exported function, `plannedSteps()`, used by the host and by the tests.
 
 **And a loss is a sample, not a value.** The trainer starts from a random
 initialisation, so the same shape at the same step count lands somewhere different
-every run: `thorough`'s configuration measured **1.310** once and **1.679** another
-time, and `quick` at 3,000 steps measured 1.476 then **1.567** — passing by 0.033.
-That is why the quality gate trains with a **fixed seed**, why `quick` now trains
-4,000 steps, and why `thorough` is a 2-layer model trained 3,000 steps rather than a
-3-layer one trained 800. Current verified figures, loss against a 1.6 line:
-`quick` **1.462** · `standard` **1.344** · `thorough` **0.775**.
+every run: one configuration measured **1.310** once and **1.679** another time.
+That is why the quality gate trains with a **fixed seed**, and why the seed is
+fixed to an arbitrary round number rather than one picked to flatter a preset.
 
-`test/quality.test.js` is the guarantee itself. It trains **each preset for the run
-the page would really take** — through the same `plannedSteps()` — and asserts the
-smoothed loss is below `RECOGNISABLE_LOSS` *and* that at least 12% of the sampled
-words really occur in the corpus. Both
-numbers are measured, not chosen:
+### 🔴 The tokeniser level follows the text — and the two levels want OPPOSITE things
 
-| smoothed loss | words in the sample that occur in the corpus |
-|---|---|
-| 2.47 | 3% |
-| 1.94 | 4% |
-| 1.65 | 13% |
-| 1.36 | 23% |
-| 0.91 | 31% |
+The site was character level, and character level produced *"thanger
+thand-wrardeady"* on prose. That is not a training problem and no amount of extra
+training fixes it, because a character model never learns a word as a unit. Measured
+with the same `Trainer`, the same preset and the same 1,500 steps — the tokeniser was
+the only thing that differed:
 
-The shipped presets sat between 1.9 and 2.5 — which is why a visitor pressed
-"Sample from it" and got alphabet soup. `npm run test:quality` runs the gate;
-`tools/deploy.sh` runs the `quick` preset on every deploy, so a preset that
+| | loss | output |
+|---|---|---|
+| character level | 1.278 | *"itical web automatily, and Go, AnfuxP stomatttts"* |
+| **word level** | **0.081** | *"FIELDER / Senior Software Engineer, Full Stack / Hamilton, Ontario, Canada / georgefielder@gmail.com"* |
+
+So it was switched to words. **And that broke the other half of the site**, which the
+measurement caught: the DEFAULT corpus is a list of six hundred given names, and on a
+list of one-off items a word-level model can do nothing but recite — every name is a
+single token occurring once, so it emitted `Abigail Adam Adrian Aiden` forever and
+invented nothing at all.
+
+Both were true, so the level now follows the text, decided by `detectLevel()` on the
+share of distinct words:
+
+| | words | distinct | ratio | level |
+|---|---|---|---|---|
+| the built-in name list | 653 | 653 | **1.00** | character |
+| the built-in dialogue | 522 | 180 | 0.34 | word |
+
+A list where almost every item occurs once is tokenised by character, so the model can
+compose new entries from real letters. Prose is tokenised by word, so it reads as
+language. Texts under 200 words stay at word level, because a ratio from a hundred
+tokens is not evidence of anything.
+
+#### 🔴 On a list, MORE TRAINING IS WORSE — measured
+
+This is the most counter-intuitive thing here, and it is asserted in the test suite so
+nobody "fixes" it later. At character level on the 653-name list:
+
+| preset | steps | time | loss | new names, of 36 lines |
+|---|---|---|---|---|
+| **`quick`** | 4,000 | 52 s | 0.810 | **29 — and 26 name-shaped** |
+| `standard` | 1,500 | 139 s | 0.572 | 26, one repeated four times |
+| `thorough` | 3,000 | 293 s | 0.364 | **16** — reciting, with stutters like `Molll y`, `Moseses` |
+
+The loss keeps falling while the thing the visitor wants disappears: a bigger model on
+a small list simply memorises it faster. **`quick` is the best preset for a list and
+`thorough` is the worst**, which is why each character-level chip carries a note saying
+so — a visitor who spends five minutes and gets worse output would otherwise read it
+as a broken demo.
+
+#### The metric, and why there are two of them
+
+The two levels fail differently, so one number cannot cover both. `COHERENCE_FLOOR`
+in `src/llm.ts` holds both, and the live page judges its own output with the same
+constant the build asserts against:
+
+- **word level** — the share of a sample's adjacent word PAIRS that occur in the
+  corpus. Every token is already a real word, so counting words says nothing; what
+  separates text from a bag of words is the ORDER. Floor **0.95**.
+- **character level** — the share of a sample's 5-letters-or-longer words that occur
+  anywhere inside the corpus. This is a *proxy*, not a score of how many entries are
+  "real": a word-shaped run passes it and random letter salad fails it, which is
+  exactly the discrimination needed. Floor **0.12**.
+
+Measured on `README.md` (11,895 characters, 1,945 word tokens, 939-word vocabulary):
+
+| steps | `quick` loss · pairs | `standard` loss · pairs |
+|---|---|---|
+| 100 | 3.189 · 86% | 2.620 · 91% |
+| 250 | 1.048 · 97% | 0.451 · 98% |
+| 500 | 0.235 · 100% | 0.127 · 100% |
+| 1000 | 0.131 · 100% | 0.095 · 100% |
+
+Under-trained word output sits at 86-91% — an assortment of real words. `test/quality.test.js`
+trains **each preset, at each level the site ships, for the run the page would really
+take** — six runs in all, three presets × two levels — through the same
+`plannedSteps()` — and asserts the smoothed loss is below
+`RECOGNISABLE_LOSS[level]` *and* that the level's own coherence is above its floor. It
+also **reports** how much of each sample is copied from the corpus, because on corpora
+this size the answer is "a lot" and a report that hid it would be the dishonest
+version. `tools/deploy.sh` runs the `quick` preset on every deploy, so a preset that
 regresses cannot be published.
 
 **End-to-end (17).** A real Chrome, the real worker, the real download path,
@@ -157,8 +217,9 @@ Caddy headers and the cache purge all have to be right at once.
 measurement id rides on the consent script as an attribute (`data-ga-id`), and
 `site/consent.js` appends the tag **only after a yes** — so a visit that refuses
 makes no request to Google and receives no cookie. The choice is stored in
-`localStorage` (`analytics_consent`), not in a cookie; `?ga=off` and `?ga=on`
-remain the owner's own switch and beat whatever a visitor chose.
+`localStorage` (`analytics_consent`), not in a cookie, and the address parameters
+`?ga=off` / `?ga=on` override it, so whoever runs the site can keep their own visits
+out of the count.
 
 This is the same model as `inputresponse.com`, and it exists because the previous
 arrangement — tag in the head, opt-out in front of it — is not consent: the

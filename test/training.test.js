@@ -40,72 +40,116 @@ import {
  */
 
 /**
- * The smallest step count each SHAPE reaches `RECOGNISABLE_LOSS` at.
+ * The smallest step count each SHAPE reaches coherence at.
  *
- * All four numbers are measured, not chosen. On `README.md` (8,389 characters):
+ * Measured on `README.md` (1,945 WORD tokens, 939-word vocabulary). The second
+ * number is the share of a sample's adjacent word pairs that really occur in the
+ * corpus — word salad scores near zero, memorised text near one:
  *
- *   quick    2,000 steps -> loss 1.647 (just above the line)
- *            3,000 steps -> loss 1.567 on the fixed seed — a 0.033 margin, too thin
- *            4,000 steps -> loss 1.362 (comfortably below)
- *   standard 1,000 steps -> loss 1.567 (marginal)
- *            1,500 steps -> loss 1.179
- *   thorough   600 steps -> loss 1.718 (still noise)
- *              800 steps -> loss 1.310 on one seed and 1.679 on another — it does
- *                          not converge in 800 steps, which is why the 3-layer
- *                          shape was dropped for a 2-layer one trained 3,000 steps
+ *   quick    100 steps -> loss 3.189  pairs  86%
+ *            250 steps -> loss 1.048  pairs  97%
+ *            500 steps -> loss 0.235  pairs 100%
+ *   standard 100 steps -> loss 2.620  pairs  91%
+ *            250 steps -> loss 0.451  pairs  98%
+ *            500 steps -> loss 0.127  pairs 100%
  *
- * `quick` uses a bigger margin than its measurement strictly needs because it
- * has the smallest model and therefore the least headroom on unfamiliar text.
+ * And the CHARACTER level has its own measured minimums, because it is not the
+ * same problem. On the built-in 653-name list — where every item occurs once — the
+ * level is character and the corpus is 4,359 tokens:
+ *
+ *   quick    4,000 steps -> loss 0.810  29 of 36 lines were NEW names
+ *   standard 1,500 steps -> loss 0.572  26 new, one repeated four times
+ *   thorough 3,000 steps -> loss 0.364  16 new, and mostly reciting the real names
  */
-const MIN_STEPS = { quick: 4000, standard: 1500, thorough: 3000 };
+const PRESET_KEYS = ['quick', 'standard', 'thorough'];
 
-test('every preset is trained long enough to form words, not just characters', () => {
-  for (const [key, minimum] of Object.entries(MIN_STEPS)) {
-    assert.ok(
-      PRESETS[key].steps >= minimum,
-      `${key} trains ${PRESETS[key].steps} steps, below the measured minimum of ${minimum} — ` +
-        `at that point the loss is still above ${RECOGNISABLE_LOSS} and the output is noise`
-    );
+const MIN_STEPS = {
+  word: { quick: 500, standard: 500, thorough: 1500 },
+  char: { quick: 4000, standard: 1500, thorough: 3000 },
+};
+
+test('every preset is trained long enough for the level it is used at', () => {
+  for (const [level, minimums] of Object.entries(MIN_STEPS)) {
+    for (const [key, minimum] of Object.entries(minimums)) {
+      const steps = PRESETS[key].levels[level].steps;
+      assert.ok(
+        steps >= minimum,
+        `${key} at ${level} level trains ${steps} steps, below the measured minimum of ${minimum} — ` +
+          `at that point the loss is still above ${RECOGNISABLE_LOSS[level]} and the output is noise`
+      );
+    }
   }
 });
 
-test('a preset that offers more costs more time and does more training', () => {
-  const order = ['quick', 'standard', 'thorough'];
+/*
+ * 🔴 THE TWO LEVELS PULL IN OPPOSITE DIRECTIONS, AND ONLY ONE OF THEM IS "MORE IS
+ * BETTER". This is the single most surprising measured thing in this project, so it
+ * is asserted rather than left in a comment.
+ *
+ * At WORD level, more training is strictly better — that is the whole story of the
+ * garbage bug, and the work invariant below holds.
+ *
+ * At CHARACTER level on a list, it is the opposite. Measured on the 653-name
+ * corpus: quick (small model, 4,000 steps) invented 29 of 36 lines; thorough (bigger
+ * model, 3,000 steps, loss 0.364) invented 16 and spent the rest reciting real names
+ * with stutters like "Molll y" and "Moseses". A bigger model on a small list just
+ * memorises it faster, so the loss keeps falling while the thing the visitor wants
+ * disappears. **Do not "fix" the character presets by raising the step counts.**
+ */
+test('a preset that offers more does more training work — at WORD level', () => {
   const work = (c) => c.steps * parameterCount(c, 84);
-  for (let i = 1; i < order.length; i += 1) {
-    const cheaper = PRESETS[order[i - 1]];
-    const dearer = PRESETS[order[i]];
+  for (let i = 1; i < PRESET_KEYS.length; i += 1) {
+    const cheaper = preset(PRESET_KEYS[i - 1], 'word');
+    const dearer = preset(PRESET_KEYS[i], 'word');
     assert.ok(
       dearer.seconds > cheaper.seconds,
-      `${order[i]} must take longer than ${order[i - 1]} (${dearer.seconds}s vs ${cheaper.seconds}s)`
+      `${PRESET_KEYS[i]} must take longer than ${PRESET_KEYS[i - 1]} ` +
+        `(${dearer.seconds}s vs ${cheaper.seconds}s)`
     );
     // WORK, not size. A preset can offer more either by being a bigger model or by
-    // training the same model longer, and `thorough` now does the second: it is
-    // `standard`'s shape trained twice as long. The measurement is why — the
-    // 3-layer shape costs 389 ms a step and did NOT reach the threshold in 800 of
-    // them (loss 1.679), while the 2-layer shape reaches 0.601 in 3,000 steps and
-    // 254 s. More training beat a bigger model, so the invariant has to be work.
+    // training the same model longer, and `thorough` does the second: it is
+    // `standard`'s shape trained three times as long. More training beat a bigger
+    // model on measurement, so the invariant has to be work.
     assert.ok(
       work(dearer) > work(cheaper),
-      `${order[i]} must do more training work than ${order[i - 1]} ` +
+      `${PRESET_KEYS[i]} must do more training work than ${PRESET_KEYS[i - 1]} ` +
         `(${work(dearer).toLocaleString()} vs ${work(cheaper).toLocaleString()})`
     );
   }
 });
 
+test('the character presets that get WORSE on a list say so on the chip', () => {
+  // The finding above, locked in so a later tidy-up cannot quietly delete the
+  // warning and leave a five-minute preset that recites where a one-minute preset
+  // invents. A visitor who is not told will read the worse output as a broken demo.
+  assert.ok(
+    PRESETS.thorough.levels.char.note?.includes('recites'),
+    'thorough at character level is measured WORSE than quick on a list, and its chip must say so'
+  );
+  assert.ok(
+    PRESETS.quick.levels.char.note,
+    'quick at character level is measured the one that invents most, and its chip should say so'
+  );
+});
+
 test('the advertised seconds are in the right order of magnitude, not optimistic', () => {
-  // Measured throughput on a desktop CPU: about 87 steps/s for the 1-layer shape
-  // and about 11.8 for the 2-layer one. A preset may not claim to finish faster
-  // than the measured rate allows — that is how "about fifteen seconds" ended up
-  // describing a model that had barely started learning.
-  const measuredStepsPerSecond = { quick: 87, standard: 11.8, thorough: 11.8 };
-  for (const [key, rate] of Object.entries(measuredStepsPerSecond)) {
-    const honest = PRESETS[key].steps / rate;
-    assert.ok(
-      PRESETS[key].seconds >= honest * 0.8,
-      `${key} claims ${PRESETS[key].seconds}s for ${PRESETS[key].steps} steps, but ` +
-        `measured throughput needs about ${honest.toFixed(0)}s`
-    );
+  // Measured throughput on a desktop CPU, per level — the 1-layer shape is far
+  // faster than the 2-layer one, and character tokens are cheaper than word tokens
+  // (a 53-token vocabulary against a 939-token one).
+  const measuredStepsPerSecond = {
+    word: { quick: 29, standard: 7, thorough: 7 },
+    char: { quick: 77, standard: 11, thorough: 10 },
+  };
+  for (const [level, rates] of Object.entries(measuredStepsPerSecond)) {
+    for (const [key, rate] of Object.entries(rates)) {
+      const { steps, seconds } = PRESETS[key].levels[level];
+      const honest = steps / rate;
+      assert.ok(
+        seconds >= honest * 0.8,
+        `${key} at ${level} claims ${seconds}s for ${steps} steps, but measured ` +
+          `throughput needs about ${honest.toFixed(0)}s`
+      );
+    }
   }
 });
 
@@ -118,8 +162,8 @@ test('sample() truncates by default rather than drawing from the whole vocabular
   // near-impossible characters was drawn constantly and the text was noisier for
   // no gain. Asserted by identity: with a fixed seed the model is deterministic,
   // so the no-argument call must equal the explicit good defaults.
-  const ascii = Array.from({ length: 95 }, (_, i) => String.fromCharCode(32 + i)).join('');
-  const text = ascii.repeat(40);
+  // A vocabulary wide enough for top-k to bite: 120 distinct words.
+  const text = Array.from({ length: 120 }, (_, i) => `word${i} `).join('').repeat(3);
   const vocab = buildVocab(text);
   const data = encode(text, vocab);
   const config = {
@@ -127,7 +171,7 @@ test('sample() truncates by default rather than drawing from the whole vocabular
     nLayer: 1, nHead: 2, dModel: 8, dFF: 16,
     blockSize: 8, batchSize: 1, steps: 1, weightDecay: 0,
   };
-  assert.ok(vocab.size > 40, 'this corpus must be wide enough for top-k 40 to bite');
+  assert.ok(vocab.size > 40, 'this corpus must be wide enough for top-k 20 to bite');
   const trainer = new Trainer({ data, vocab, config, seed: 7 });
 
   const byDefault = trainer.sample({ seed: 5 });
@@ -173,26 +217,53 @@ test('the epoch cap does not override the preset on a realistic corpus', () => {
   // assertion that catches that, and it is why `plannedSteps` exists.
   assert.ok(MAX_EPOCHS >= 400, `the epoch ceiling is ${MAX_EPOCHS}, low enough to decide the run`);
 
+  // 🔴 The cap used to decide everything: at 40 epochs the built-in 4,359-character
+  // name list gave every preset exactly 605 steps, so what the preset asked for was
+  // irrelevant. With the ceiling at 400 and the presets at word-level step counts,
+  // it no longer binds on a realistic paste.
+  assert.ok(MAX_EPOCHS >= 400, `the epoch ceiling is ${MAX_EPOCHS}, low enough to decide the run`);
+
   const realistic = [
-    ['the built-in name list', 4359],
     ['a 12,000-character paste, the size that produced the garbage', 11939],
     ['a 30,000-character document', 30000],
   ];
   for (const [label, length] of realistic) {
-    for (const key of Object.keys(MIN_STEPS)) {
+    for (const key of PRESET_KEYS) {
+      const { steps } = PRESETS[key].levels.word;
       assert.equal(
-        plannedSteps(PRESETS[key], length),
-        PRESETS[key].steps,
-        `${key} on ${label} is capped to fewer than the ${PRESETS[key].steps} steps it asks for — ` +
+        plannedSteps(preset(key, 'word'), length),
+        steps,
+        `${key} on ${label} is capped to fewer than the ${steps} steps it asks for — ` +
           `the run-length cap is deciding how well the model learns again`
       );
     }
   }
 
+  // A SMALL corpus is a legitimate exception, and worth stating rather than hiding:
+  // the built-in name list is only about 700 word tokens, so `thorough` is capped
+  // there to ~730 steps. That is 400 passes over the text, which is ample — but it
+  // must still be far more than a token amount.
+  for (const key of PRESET_KEYS) {
+    const capped = plannedSteps(preset(key, 'word'), 4359);
+    assert.ok(capped >= 250, `${key} is starved on the built-in name list (${capped} steps)`);
+  }
+
+  // At CHARACTER level the name list is 4,359 tokens and none of the presets may be
+  // throttled there — that is the corpus the default demo runs on.
+  for (const key of PRESET_KEYS) {
+    const { steps } = PRESETS[key].levels.char;
+    assert.equal(
+      plannedSteps(preset(key, 'char'), 4359),
+      steps,
+      `${key} at character level is throttled on the name list — the default demo ` +
+        `would train less than the preset asks for`
+    );
+  }
+
   // The ceiling must still exist, or a one-paragraph corpus would be read an
   // unbounded number of times and the progress estimate would be nonsense.
   assert.ok(
-    plannedSteps(PRESETS.quick, 300) < PRESETS.quick.steps,
+    plannedSteps(preset('quick', 'char'), 300) < PRESETS.quick.levels.char.steps,
     'a very short corpus must still be capped'
   );
 });

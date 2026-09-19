@@ -16,7 +16,7 @@
  * served JavaScript really arrives with it (test/e2e.test.js). Do not remove that
  * header, and do not reintroduce a build that needs a token bump to be visible.
  */
-import { PRESETS, preset, parameterCount, buildVocab } from './llm.js';
+import { PRESETS, preset, parameterCount, buildVocab, tokenize, detectLevel, COHERENCE_FLOOR, } from './llm.js';
 import { CORPORA, DEFAULT_CORPUS } from './corpora.js';
 /** Get an element the page is known to contain, or fail loudly. */
 function $(id) {
@@ -107,6 +107,7 @@ const state = {
     steps: 0,
     startedAt: 0,
     parameters: 0,
+    level: 'word',
 };
 const number = (n) => n === null || n === undefined || !Number.isFinite(n) ? '—' : Math.round(n).toLocaleString();
 const seconds = (s) => s < 60 ? `${s.toFixed(1)} s` : `${Math.floor(s / 60)} min ${Math.round(s % 60)} s`;
@@ -116,6 +117,66 @@ const roughSeconds = (s) => {
     const minutes = Math.round(s / 60);
     return minutes === 1 ? 'about a minute' : `about ${minutes} minutes`;
 };
+/** The current training text, capped the way the host caps it. */
+function corpusText() {
+    const text = $('corpus').value;
+    return text.length > 200000 ? text.slice(0, 200000) : text;
+}
+/**
+ * The one thing the whole page keys off: the level the TEXT calls for.
+ *
+ * Prose is tokenised by word and a list of one-off items by character — see
+ * `detectLevel`. Nothing asks the visitor, because the shape of the text already
+ * answers it, and the estimate, the step count and the verdict all depend on it.
+ */
+function currentLevel() {
+    return detectLevel(corpusText());
+}
+/** "words" or "characters", for wherever a count is shown. */
+const unitFor = (level) => (level === 'char' ? 'characters' : 'words');
+/**
+ * 🔴 "HOW DO I KNOW IT WORKED?" — the page answers it, so the visitor does not
+ * have to.
+ *
+ * George asked exactly that, and it was a fair question: the page reported a loss,
+ * a step count and three samples, and left the reader to decide whether what they
+ * were looking at was good. That is the wrong job to hand a visitor.
+ *
+ * The measure is the one the test suite uses, computed here on the samples that
+ * are actually on screen, against the text that is actually in the box:
+ *
+ *   word level — the share of the sample's adjacent word PAIRS that also occur in
+ *                the corpus. Word salad cannot have them; real text nearly always
+ *                does. Floor 0.95.
+ *   char level — the share of the sample's 5-letter-or-longer words that also
+ *                occur in the corpus. Alphabet soup scores 3-4%; real invented
+ *                words score 30%+ because they are built from real fragments.
+ *                Floor 0.12.
+ *
+ * Both floors are measured, not chosen — see `COHERENCE_FLOOR` in `src/llm.ts`.
+ */
+function judgeSamples(samples, corpus, level) {
+    if (level === 'char') {
+        const hay = corpus.toLowerCase();
+        const words = samples.flatMap((s) => s.toLowerCase().match(/[a-z]{5,}/g) ?? []);
+        if (!words.length)
+            return { ok: false, ratio: 0, unit: 'long words' };
+        const hit = words.filter((w) => hay.includes(w)).length;
+        return { ok: hit / words.length >= COHERENCE_FLOOR.char, ratio: hit / words.length, unit: 'long words' };
+    }
+    const tokens = tokenize(corpus, 'word').map((t) => t.trim());
+    const bigrams = new Set();
+    for (let i = 1; i < tokens.length; i += 1)
+        bigrams.add(`${tokens[i - 1]} ${tokens[i]}`);
+    const all = samples.flatMap((s) => tokenize(s, 'word').map((t) => t.trim()));
+    if (all.length < 2)
+        return { ok: false, ratio: 0, unit: 'word pairs' };
+    let hit = 0;
+    for (let i = 1; i < all.length; i += 1)
+        if (bigrams.has(`${all[i - 1]} ${all[i]}`))
+            hit += 1;
+    return { ok: hit / (all.length - 1) >= COHERENCE_FLOOR.word, ratio: hit / (all.length - 1), unit: 'word pairs' };
+}
 /* ------------------------------------------------------------------ *
  * Corpus + preset controls
  * ------------------------------------------------------------------ */
@@ -156,18 +217,34 @@ function renderCorpora() {
 }
 function refreshCorpusStats() {
     const text = $('corpus').value;
-    const vocab = buildVocab(text.length > 200000 ? text.slice(0, 200000) : text);
-    const characters = [...text];
+    const vocab = buildVocab(corpusText());
+    const level = vocab.level;
     $('corpusStats').textContent =
-        `${characters.length.toLocaleString()} characters · ${vocab.size.toLocaleString()} distinct · ` +
+        `${tokenize(corpusText(), level).length.toLocaleString()} ${unitFor(level)} · ` +
+            `${vocab.size.toLocaleString()} in vocabulary · ` +
             `${(text.split('\n').length - 1).toLocaleString()} lines`;
+    // A character-level run needs far more tokens on screen to show anything, so the
+    // sample length follows the level. Only moved when the LEVEL changes, so a
+    // visitor who has set it themselves keeps their setting.
+    if (state.level !== level) {
+        state.level = level;
+        const suggested = level === 'char' ? '500' : '200';
+        $('length').value = suggested;
+        $('lengthValue').textContent = suggested;
+    }
     const note = $('corpusNote');
     const corpus = CORPORA[state.corpusKey];
     note.textContent =
         state.corpusKey !== 'own' && corpus
             ? corpus.note
             : 'Paste anything — a page of prose, a list of product names, a script. Line structure is what a small model learns fastest.';
+    // 🔴 BOTH, because the preset chips now depend on the level and the level depends
+    // on this text. Re-rendering only the model preview left the chips advertising the
+    // wrong preset times and the wrong warning as soon as the visitor switched
+    // corpus — 20 seconds on one text and 55 on the next, with the chip still saying
+    // the first. Anything that changes the text has to go through here.
     refreshModelPreview();
+    renderPresets();
 }
 function renderPresets() {
     const box = $('presetButtons');
@@ -181,7 +258,11 @@ function renderPresets() {
         const strong = document.createElement('strong');
         strong.textContent = p.label;
         const small = document.createElement('span');
-        small.textContent = `${roughSeconds(p.seconds)} on a desktop · ${p.nLayer} layer${p.nLayer > 1 ? 's' : ''}, ${p.nHead} heads`;
+        const timing = p.levels[currentLevel()];
+        small.textContent =
+            `${roughSeconds(timing.seconds)} on a desktop · ${p.nLayer} layer${p.nLayer > 1 ? 's' : ''}, ` +
+                `${p.nHead} heads` +
+                (timing.note ? ` · ${timing.note}` : '');
         button.append(strong, small);
         button.addEventListener('click', () => {
             state.presetKey = key;
@@ -193,9 +274,9 @@ function renderPresets() {
     }
 }
 function refreshModelPreview() {
-    const config = preset(state.presetKey);
-    const text = $('corpus').value;
-    const vocab = buildVocab(text.length > 200000 ? text.slice(0, 200000) : text);
+    const vocab = buildVocab(corpusText());
+    const unit = unitFor(vocab.level);
+    const config = preset(state.presetKey, vocab.level);
     state.parameters = parameterCount(config, vocab.size);
     const box = $('modelStats');
     box.textContent = '';
@@ -205,10 +286,12 @@ function refreshModelPreview() {
         ['attention heads', String(config.nHead)],
         ['width', String(config.dModel)],
         ['feed-forward', String(config.dFF)],
-        ['context', `${config.blockSize} characters`],
+        ['context', `${config.blockSize} ${unit}`],
         ['batch', `${config.batchSize} windows per step`],
+        ['steps', config.steps.toLocaleString()],
         ['optimiser', `AdamW · learning rate ${config.lr}`],
-        ['vocabulary', `${vocab.size} characters`],
+        ['vocabulary', `${vocab.size} ${unit}`],
+        ['tokeniser', `${vocab.level} level`],
     ];
     for (const [key, value] of rows) {
         const div = document.createElement('div');
@@ -337,11 +420,13 @@ function stopTraining() {
 }
 function onStarted(message) {
     state.steps = message.steps;
+    state.level = message.level;
     $('configSummary').textContent =
         `${message.parameters.toLocaleString()} parameters · ${message.config.nLayer} layer(s) · ` +
-            `${message.config.nHead} heads · width ${message.config.dModel} · context ${message.config.context} · ` +
+            `${message.config.nHead} heads · width ${message.config.dModel} · ` +
+            `context ${message.config.context} ${unitFor(message.level)} · ` +
             `${message.steps.toLocaleString()} steps · vocabulary ${message.vocabularySize}`;
-    $('vocabChars').textContent = message.characters;
+    $('vocabChars').textContent = message.vocabulary;
     setStatus(message.truncated
         ? 'That text was longer than the demo will use — the first 200,000 characters are being trained on.'
         : 'Training…', message.truncated ? 'warn' : '');
@@ -392,7 +477,10 @@ function onDone(message, stopped) {
  * ------------------------------------------------------------------ */
 function generateSamples() {
     $('samples').textContent = '';
+    $('verdict').textContent = '';
+    $('verdict').className = 'verdict';
     $('genMsg').textContent = 'Sampling from the model you just made…';
+    pending.length = 0;
     track('text_generated', {
         temperature: Number($('temperature').value),
         top_k: Number($('topK').value),
@@ -407,11 +495,57 @@ function generateSamples() {
         count: 3,
     });
 }
+/** How many samples the page asks for, so the verdict knows when they have all landed. */
+const SAMPLE_COUNT = 3;
+const pending = [];
 function renderSample(message) {
     const block = document.createElement('pre');
     block.className = 'sample';
     block.textContent = message.text.trim() || '(the model produced nothing — try a lower temperature)';
     $('samples').appendChild(block);
+    pending.push(message.text);
+    if (pending.length < SAMPLE_COUNT)
+        return;
+    renderVerdict(pending.slice(), corpusText(), state.level);
+}
+/**
+ * The answer to "is it working?", in one line, from the samples on screen.
+ *
+ * Deliberately blunt about the number: a verdict that only said "looks good" would
+ * be worth nothing, and a visitor who is shown `86% against a floor of 95%` can
+ * act on it — train longer, or pick a bigger preset.
+ */
+function renderVerdict(samples, corpus, level) {
+    const { ok, ratio, unit } = judgeSamples(samples, corpus, level);
+    const percent = Math.round(ratio * 100);
+    const floor = Math.round(COHERENCE_FLOOR[level] * 100);
+    // The wording differs by level because the same number means different things, and
+    // saying the wrong thing about it is how a demo gets oversold:
+    //
+    //   word level — the number IS the claim. 100% of pairs occurring means the text
+    //                is continuous, and it can be said plainly.
+    //   char level — the number is a PROXY, not a score of how many names are "real".
+    //                The test is whether a sampled word appears anywhere inside the
+    //                corpus, and random letter salad fails it (3-4%) while word-shaped
+    //                runs pass it. So the honest sentence is "this is word-shaped, not
+    //                letter salad" — NOT "27% of these are names from your list",
+    //                which is not what was measured.
+    const good = level === 'char'
+        ? `✓ Readable — word-shaped, not letter salad. ${percent}% of the long words in these samples ` +
+            `occur inside your text (the bar is ${floor}%; letter salad scores 3–4%). Look at the samples ` +
+            `above: these are new entries built out of the letters of yours.`
+        : `✓ Readable — ${percent}% of the ${unit} in these samples also occur in your text ` +
+            `(the bar is ${floor}%). The model is putting real words in the right order.`;
+    const bad = level === 'char'
+        ? `✗ Still noise — letters in the wrong order: only ${percent}% of the long words in these ` +
+            `samples occur anywhere in your text (the bar is ${floor}%; letter salad scores 3–4%). ` +
+            `Train longer, or choose a bigger preset.`
+        : `✗ Still noise — only ${percent}% of the ${unit} in these samples occur in your text ` +
+            `(the bar is ${floor}%). Train longer, or choose a bigger preset.`;
+    const el = $('verdict');
+    el.className = 'verdict ' + (ok ? 'is-good' : 'is-bad');
+    el.textContent = ok ? good : bad;
+    track('sample_judged', { level, readable: ok, percent, floor });
 }
 /* ------------------------------------------------------------------ *
  * Downloads
@@ -431,7 +565,7 @@ function onWeights(payload) {
     const text = JSON.stringify(payload);
     download('llm-demo-weights.json', text, 'application/json');
     const megabytes = (text.length / 1048576).toFixed(1);
-    setStatus(`Weights downloaded (${megabytes} MB) — ${payload.vocab.length} characters of vocabulary and every trained parameter, in plain JSON.`, 'ok');
+    setStatus(`Weights downloaded (${megabytes} MB) — a vocabulary of ${payload.vocab.length.toLocaleString()} words and every trained parameter, in plain JSON.`, 'ok');
     track('weights_downloaded', { parameters: state.parameters, megabytes: Number(megabytes) });
 }
 function onReport(payload) {
@@ -442,10 +576,10 @@ function onReport(payload) {
         `- generated: ${payload.generated_at}`,
         `- parameters: ${payload.model.parameters.toLocaleString()}`,
         `- architecture: ${payload.model.layers} layer(s), ${payload.model.heads} heads, width ${payload.model.width}, feed-forward ${payload.model.feed_forward}`,
-        `- context: ${payload.model.context} characters · batch ${payload.model.batch_size}`,
+        `- context: ${payload.model.context} words · batch ${payload.model.batch_size}`,
         `- optimiser: ${payload.model.optimizer}, learning rate ${payload.model.learning_rate}, weight decay ${payload.model.weight_decay}`,
         `- tokenizer: ${payload.model.tokenizer}, vocabulary ${payload.model.vocabulary_size}`,
-        `- corpus: ${payload.training.corpus_characters.toLocaleString()} characters`,
+        `- corpus: ${payload.training.corpus_tokens.toLocaleString()} words`,
         `- trained: ${payload.training.steps.toLocaleString()} steps, ${payload.training.tokens_seen.toLocaleString()} tokens`,
         `- final loss: ${payload.training.smoothed_loss === null ? 'n/a' : payload.training.smoothed_loss.toFixed(4)}`,
         '',

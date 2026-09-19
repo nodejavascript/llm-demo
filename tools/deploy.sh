@@ -20,9 +20,12 @@ echo "== unit tests =="
 node --test test/llm.test.js test/static.test.js test/training.test.js
 
 # The one that would have caught the garbage: it trains the preset and asserts the
-# loss clears RECOGNISABLE_LOSS. Only `quick`, because a deploy cannot wait eight
-# minutes — the full three-preset gate is `npm run test:quality`.
-echo "== training quality gate (quick preset) =="
+# loss clears RECOGNISABLE_LOSS. Only `quick`, because a deploy cannot wait fourteen
+# minutes — the full gate is `npm run test:quality`. `quick` alone covers BOTH levels
+# now (the README as prose, the built-in names as a list), which is the pair that
+# broke in each direction, so a deploy still cannot publish a preset that regresses
+# in either of them.
+echo "== training quality gate (quick preset, both levels) =="
 PRESET=quick node --test test/quality.test.js
 
 echo "== publish =="
