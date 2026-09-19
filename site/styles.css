@@ -73,6 +73,32 @@ body {
   background-attachment: fixed;
 }
 
+/* 🔴 THE ABSTRACT — the extra touch the apex had and the rest of the family did not.
+   Measured in a real browser on 19 Sep 2026: this site painted two gradients and no geometry,
+   and so did eight others, while nodejavascript.com painted a masked grid. George, verbatim:
+   *"the rest of the sites have lovely theme colors and gradients, but maybe missing the extra
+   touch of a background abstract."*
+
+   This site's geometry is a FINE DIAGONAL HATCH, in the site's own violet — one direction, thin,
+   close together, which is a shape no other site in the family draws. It is its own fixed layer
+   rather than another entry in body's gradient stack for one reason: a pattern has to FADE, and
+   nothing fades a background image except a mask. A mask on `body` would fade the page's own
+   background with it; masked here, the hatch dissolves before the fold, so there is no edge to
+   see — which is the half of part 5d that matters. */
+.dvs-pattern {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(139, 92, 246, 0.07) 0 1px,
+    rgba(0, 0, 0, 0) 1px 34px
+  );
+  -webkit-mask-image: radial-gradient(122% 82% at 50% 0%, #000 18%, rgba(0, 0, 0, 0) 82%);
+  mask-image: radial-gradient(122% 82% at 50% 0%, #000 18%, rgba(0, 0, 0, 0) 82%);
+}
+
 @media (prefers-reduced-motion: reduce) {
   html {
     scroll-behavior: auto;

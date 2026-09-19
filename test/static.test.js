@@ -398,6 +398,27 @@ test('the banner cannot sit on top of the footer', () => {
   assert.match(css, /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/, '`hidden` must beat the display rules the panel switches between');
 });
 
+test('the page carries an ABSTRACT, and it fades', () => {
+  // 🔴 THE FAULT THIS HOLDS DOWN, measured in a real browser on 19 Sep 2026: NINE of the ten
+  // sites painted a soft gradient wash and NOTHING else, while nodejavascript.com painted a
+  // masked grid — and every one of them satisfied "has a background image", because the register
+  // counted gradients. George, that evening, verbatim: *"the only thing wrong is that the
+  // background image is not there for all sites except nodejavascript … the rest of the sites
+  // have lovely theme colors and gradients, but maybe missing the extra touch of a background
+  // abstract."*
+  //
+  // So the assertion is geometry, not a gradient list: this site's own hatch must be drawn, it
+  // must be RENDERED (asserted against the markup, because a rule satisfied in a stylesheet
+  // nobody paints is no rule at all), and it must be MASKED — a pattern with an edge is a band,
+  // which he rejected.
+  const css = read('styles.css');
+  const pattern = css.slice(css.indexOf('.dvs-pattern {'));
+  assert.match(pattern, /repeating-linear-gradient\(/, 'the abstract must be geometry, not another glow');
+  assert.match(pattern, /-webkit-mask-image:/, 'it must fade');
+  assert.match(pattern, /mask-image:/, 'it must fade in every engine, not only WebKit');
+  assert.match(html, /class="dvs-pattern"/, 'the layer exists in the page that ships');
+});
+
 test('no asset reference carries a version query', () => {
   // The first fix for a stale-module bug was a `?v=` token on every reference.
   // That cannot survive TypeScript, which cannot resolve an import specifier with
