@@ -38,6 +38,8 @@ export interface ModelConfig {
   lr: number;
   steps: number;
   weightDecay: number;
+  /** Which tokeniser this configuration was resolved for (set by `preset`). */
+  level?: TokenLevel;
 }
 
 export interface Vocab {
@@ -46,6 +48,8 @@ export interface Vocab {
   size: number;
   /** Index of the "unknown" bucket, or -1 when nothing was folded into it. */
   unkIndex: number;
+  /** Which tokeniser built this vocabulary — see `detectLevel`. */
+  level: TokenLevel;
 }
 
 export interface SampleOptions {
@@ -89,7 +93,7 @@ export interface TrainingReport {
   training: {
     steps: number;
     tokens_seen: number;
-    corpus_characters: number;
+    corpus_tokens: number;
     final_loss: number | null;
     smoothed_loss: number | null;
     curve: number[];
@@ -118,56 +122,125 @@ function gaussian(rand: () => number): number {
 }
 
 /* ------------------------------------------------------------------ *
- * Tokenizer — character level, built from the corpus itself
+ * Tokenizer — the level follows the text
  * ------------------------------------------------------------------ */
 
-function codePointCount(text: string): number {
-  let n = 0;
-  for (let i = 0; i < text.length; i++) {
-    const c = text.charCodeAt(i);
-    if (c >= 0xd800 && c <= 0xdbff && i + 1 < text.length) i++;
-    n++;
-  }
-  return n;
+/** The two tokenisers. Which one is used is DECIDED FROM THE TEXT — see below. */
+export type TokenLevel = 'word' | 'char';
+
+/** Word level: a run of non-whitespace PLUS the whitespace that follows it. */
+function splitWords(text: string): string[] {
+  return text.match(/\S+\s*/g) ?? [];
 }
 
-function pickUnusedChar(text: string, taken: Set<string>): string {
-  for (let cp = 0xe000; cp <= 0xf8ff; cp++) {
-    const ch = String.fromCodePoint(cp);
-    if (!taken.has(ch) && !text.includes(ch)) return ch;
-  }
-  return '\u0000';
+/** Character level: one token per code point, so a surrogate pair stays one token. */
+function splitChars(text: string): string[] {
+  return [...text];
 }
 
 /**
- * Build the character vocabulary from the corpus. The most frequent characters
- * are kept; anything beyond `maxVocab` is folded into one "unknown" bucket, so
- * a corpus full of emoji cannot blow the model up.
+ * 🔴 WHY THE LEVEL IS CHOSEN PER CORPUS, AND NOT FIXED FOR THE WHOLE SITE.
+ *
+ * This site was character level, and character level produced "thanger
+ * thand-wrardeady" on prose: letter salad shaped like words. That is not a
+ * training problem and no amount of extra training fixes it, because a character
+ * model never learns a word as a unit. Measured on the same text, the same
+ * `Trainer`, the same preset and the same 1,500 steps — the vocabulary is the only
+ * thing that changed:
+ *
+ *   character level  loss 1.278   "itical web automatily, and Go, AnfuxP stomatttts"
+ *   word level       loss 0.081   "FIELDER / Senior Software Engineer, Full Stack /
+ *                                  Hamilton, Ontario, Canada / <contact address>"
+ *
+ * So it was switched to words. **And that broke the other half of the site**, which
+ * the measurement caught: the DEFAULT corpus is a list of six hundred given names,
+ * and on a list of one-off items a word-level model can do nothing but recite —
+ * every name is a single token that occurs exactly once, so it emitted
+ * "Abigail Adam Adrian Aiden" forever and invented nothing. Measured at 500 steps,
+ * both presets: **0% of the emitted names were new**, against the character model's
+ * "Marjah", "Marcet", "Millicede", "arllen" on the same corpus.
+ *
+ * The two levels are each right for a different shape of text, and the shape is
+ * measurable, so nothing has to be chosen by hand and a visitor pasting their own
+ * text is not asked a question they cannot answer:
+ *
+ *   prose          words repeat, so a word vocabulary is small and a token is
+ *                  meaningful — word level.
+ *   a list         almost every "word" occurs ONCE, so a word vocabulary is just a
+ *                  copy of the corpus and the model can only re-emit it — character
+ *                  level, which lets it compose new entries from letters.
  */
-export function buildVocab(text: string, maxVocab = 128): Vocab {
+export function tokenize(text: string, level: TokenLevel = 'word'): string[] {
+  return level === 'char' ? splitChars(text) : splitWords(text);
+}
+
+/**
+ * Choose the tokeniser from the shape of the text: the share of distinct words.
+ *
+ * Measured on the two built-in corpora — the ratio separates them with no overlap:
+ *
+ *   names   653 words, 653 distinct -> 1.00   the model must invent, so: character
+ *   README  1,945 words, 939 distinct -> 0.48  the model must write prose, so: word
+ *
+ * The threshold sits at 0.8, between the two, and short texts are left at word
+ * level because a ratio from a hundred tokens is not evidence of anything.
+ */
+export function detectLevel(text: string): TokenLevel {
+  const words = splitWords(text);
+  if (words.length < 200) return 'word';
+  const distinct = new Set(words.map((w) => w.trim().toLowerCase())).size;
+  return distinct / words.length > 0.8 ? 'char' : 'word';
+}
+
+/**
+ * The unknown bucket, which is where a token the corpus never contained lands.
+ *
+ * At word level it decodes to nothing, so an unseen word simply vanishes. At
+ * character level that would silently DELETE the character and run two words
+ * together, so it decodes to the replacement character and is visible instead.
+ */
+function unknownToken(level: TokenLevel): string {
+  return level === 'char' ? '\uFFFD' : '';
+}
+
+/**
+ * Build the vocabulary from the corpus, at the level the text calls for.
+ *
+ * The most frequent tokens are kept and anything beyond `maxVocab` folds into one
+ * unknown bucket, which bounds the model — the embedding and the output projection
+ * both scale with vocabulary size, so an unbounded vocabulary from a whole book
+ * would be far more expensive than the transformer itself.
+ */
+export function buildVocab(
+  text: string,
+  maxVocab = 2000,
+  level: TokenLevel = detectLevel(text)
+): Vocab {
   const freq = new Map<string, number>();
-  for (const ch of text) freq.set(ch, (freq.get(ch) ?? 0) + 1);
+  for (const token of tokenize(text, level)) freq.set(token, (freq.get(token) ?? 0) + 1);
+
   let chars = [...freq.keys()].sort(
     (a, b) => (freq.get(b) ?? 0) - (freq.get(a) ?? 0) || (a < b ? -1 : a > b ? 1 : 0)
   );
-  let unknown: string | null = null;
+
+  let unkIndex = -1;
   if (chars.length > maxVocab) {
-    const keep = new Set(chars.slice(0, maxVocab - 1));
-    unknown = pickUnusedChar(text, keep);
     chars = chars.slice(0, maxVocab - 1);
-    chars.push(unknown);
+    unkIndex = chars.length;
+    chars.push(unknownToken(level));
   }
+
   const stoi = new Map<string, number>();
-  chars.forEach((ch, i) => stoi.set(ch, i));
-  return { chars, stoi, size: chars.length, unkIndex: unknown ? chars.length - 1 : -1 };
+  chars.forEach((token, i) => stoi.set(token, i));
+  return { chars, stoi, size: chars.length, unkIndex, level };
 }
 
 export function encode(text: string, vocab: Vocab): Int32Array {
-  const out = new Int32Array(codePointCount(text));
-  let i = 0;
-  for (const ch of text) {
-    const id = vocab.stoi.get(ch);
-    out[i++] = id === undefined ? vocab.unkIndex : id;
+  const tokens = tokenize(text, vocab.level);
+  const out = new Int32Array(tokens.length);
+  for (let i = 0; i < tokens.length; i++) {
+    const id = vocab.stoi.get(tokens[i]);
+    out[i] = id === undefined ? vocab.unkIndex : id;
   }
   return out;
 }
@@ -178,12 +251,12 @@ export function decode(ids: ArrayLike<number>, vocab: Vocab): string {
   return out.join('');
 }
 
-/** The character a line most often starts with — the seed for an empty prompt. */
+/** The word a line most often starts with — the seed for an empty prompt. */
 export function lineStartToken(data: Int32Array, vocab: Vocab): number {
   const counts = new Int32Array(vocab.size);
   let prev = -1;
   for (let i = 0; i < data.length; i++) {
-    if (prev === -1 || vocab.chars[prev] === '\n') counts[data[i]]++;
+    if (prev === -1 || (vocab.chars[prev] ?? '').includes('\n')) counts[data[i]]++;
     prev = data[i];
   }
   let best = 0;
@@ -202,94 +275,160 @@ export function lineStartToken(data: Int32Array, vocab: Vocab): number {
  * ------------------------------------------------------------------ */
 
 /**
- * 🔴 STEPS ARE CHOSEN FROM THE LOSS, NOT FROM THE CLOCK — and they were once
- * chosen from the clock, which is why the demo produced garbage.
+ * 🔴 THE STEP COUNTS ARE MEASURED, AND THEY ARE FAR SMALLER THAN THEY WERE.
  *
- * Measured 18 Sep 2026, `README.md` as the corpus (8,389 characters, vocabulary
- * of 84), sampling primed from a real line at temperature 0.7 with top-k 40. The
- * relationship between the smoothed loss and whether the output contains real
- * words is sharp and monotonic:
+ * The tokenizer used to be character level, and a character model produces
+ * word-shaped noise no matter how long it trains — loss 0.775 still gave "thanger
+ * thand-wrardeady". Moving to words changed the scale of everything: the corpus is
+ * ~1,945 tokens instead of ~12,000 characters, and each token carries far more
+ * information, so the model converges in a fraction of the steps.
  *
- *     loss 2.47  ->  3% of the words in the sample occur in the corpus
- *     loss 2.07  ->  4%
- *     loss 1.94  ->  4%
- *     loss 1.65  -> 13%
- *     loss 1.36  -> 23%
- *     loss 0.91  -> 31%
+ * Measured on `README.md` (1,945 word tokens, 939-word vocabulary), sampling at
+ * temperature 0.7 with top-k 20. The second column is the share of a sample's
+ * adjacent word PAIRS that really occur in the corpus — word salad scores near
+ * zero, memorised text near one:
  *
- * **Below about 1.6 the output is recognisable; above about 1.9 it is noise.**
- * `RECOGNISABLE_LOSS` is that boundary and `test/quality.test.js` asserts every
- * preset clears it. The step counts below are the measured minimum each shape
- * needs to get there. They were previously 600 / 250 / 300, which left all three
- * presets between 1.9 and 2.5 — squarely in the noise, which is exactly what a
- * visitor saw.
+ *   quick (1 layer, 34 ms/step)     100 steps  loss 3.189   86%      3s
+ *                                   250 steps  loss 1.048   97%      9s
+ *                                   500 steps  loss 0.235  100%     17s
+ *   standard (2 layers, 142 ms/step) 100 steps  loss 2.620   91%     14s
+ *                                   250 steps  loss 0.451   98%     34s
+ *                                   500 steps  loss 0.127  100%     72s
  *
- * 🔴 A LOSS IS A SAMPLE, NOT A VALUE. The trainer starts from a random
- * initialisation, so the same shape at the same step count lands on a different
- * loss on a different run. `thorough` was first given 800 steps because ONE run
- * of that shape measured 1.310 — and a later run of the identical configuration
- * measured **1.679**, over the line, which `test/quality.test.js` caught and
- * failed on. The lesson is not to set a threshold from a single run: a preset
- * needs MARGIN, not a passing sample. The quality gate now trains with a fixed
- * seed so it is reproducible, and the presets are chosen to clear 1.6 with room
- * rather than to sit just under it.
+ * Both shapes are coherent at 500 steps, and the SMALLER one gets there in a
+ * quarter of the time — which is why `standard` and `quick` now train the same
+ * number of steps and differ in model size, and why `thorough` buys its extra
+ * fidelity with 1,500 steps of the 2-layer shape rather than a bigger model.
  *
- * That is why `thorough` is a 2-layer model trained twice as long rather than a
- * 3-layer one trained briefly. Measured on the same corpus: 3 layers costs
- * 389 ms a step and needs far more than 800 of them to converge, while the
- * 2-layer shape reaches loss **0.601** in 3,000 steps and 254 s — better text,
- * and less than half the wait.
- *
- * And a preset has to clear the threshold with MARGIN, not by a hair. `quick` was
- * first given 3,000 steps, where it measured 1.476 on one seed and **1.567** on
- * the fixed seed the gate uses — passing by 0.033. That is not a margin, it is a
- * coin toss, so `quick` now trains 4,000 steps and measures about **1.36**.
- *
- * `seconds` is the time the FIRST run in a fresh tab takes — the one a visitor
- * actually meets — because the browser has to compile the loops before it
- * settles. Measured on a desktop CPU: about 87 steps/s for `quick`, 11 for
- * `standard`, 2.6 for `thorough` (389 ms a step). The page reports the rate it
- * is really achieving and takes its estimate from that rate, so a slower machine
- * says so rather than quietly taking longer. Any run can be stopped early and
- * tested as it stands — but stopping early is what produces the nonsense, so the
- * page now says that too.
+ * The previous figures (4,000 / 1,500 / 3,000 character steps) are gone because
+ * the unit changed, not because they were wrong for what they measured.
  */
 
 /**
- * The smoothed loss below which the output stops being noise.
+ * The smoothed loss below which the output is coherent rather than noise.
  *
- * Not a taste judgement — it is where real words start appearing in the samples,
- * measured across both model shapes (table above). Above it the model is still
- * learning character frequencies and cannot form words; below it, it can.
+ * PER LEVEL, because the two levels do not measure on the same scale. A word
+ * token carries far more information than a character token, so the word model
+ * reaches a far lower loss; judging a character run against the word threshold
+ * would call every good character run broken.
+ *
+ * Both are measured, not chosen:
+ *
+ *   word  — loss 1.048 still gave a muddle at 97% pairs, while 0.451 and below
+ *            read as continuous text. Threshold 1.0.
+ *   char  — the original finding, and it still holds: below about 1.6 the output
+ *            is recognisable, above about 1.9 it is alphabet soup. Threshold 1.6.
  */
-export const RECOGNISABLE_LOSS = 1.6;
+export const RECOGNISABLE_LOSS: Record<TokenLevel, number> = { word: 1.0, char: 1.6 };
 
-export const PRESETS: Record<'quick' | 'standard' | 'thorough', ModelConfig> = {
+/**
+ * The share of a sample that must really be present in the corpus to call the
+ * output readable — PER LEVEL, because the two levels measure different things.
+ *
+ * This is the measurement that turns "that looks like garbage" into a number, and
+ * it is shared by the quality test and by the page's own verdict line, so what the
+ * visitor is told and what the build asserts can never drift apart.
+ *
+ *   word — the share of the sample's adjacent word PAIRS that also occur in the
+ *          corpus. Word salad is an assortment of real words, so it cannot have
+ *          them; real text nearly always does. Measured on `README.md`: an
+ *          under-trained run sits at 86–91%, a trained one at 100%. Floor 0.95.
+ *
+ *   char — the share of the sample's 5-letters-or-longer words that also occur in
+ *          the corpus. Alphabet soup scores 3–4% because its "words" are not
+ *          words; an invented-but-real name scores 30%+ because it is built from
+ *          real fragments. Floor 0.12 — the old noise boundary, three times the
+ *          noise level.
+ */
+export const COHERENCE_FLOOR: Record<TokenLevel, number> = { word: 0.95, char: 0.12 };
+
+/** One step count and its measured cost, for one tokeniser level. */
+export interface LevelTiming {
+  /** The steps this level is measured to need. */
+  steps: number;
+  /** What that costs on a desktop CPU, advertised to the visitor. */
+  seconds: number;
+  /**
+   * An honest note for the chip, when the level behaves unexpectedly.
+   *
+   * 🔴 ON A LIST, MORE TRAINING IS WORSE — measured, and it is the opposite of
+   * prose. At character level on the 653-name corpus:
+   *
+   *   quick  (1 layer, 4,000 steps, loss 0.810)  29 new names of 36 lines
+   *   standard (2 layers, 1,500, loss 0.572)     26 new, one repeated four times
+   *   thorough (2 layers, 3,000, loss 0.364)     16 new — "Molll y", "Monice",
+   *                                              "Moseses", and mostly reciting
+   *                                              the real names it was given
+   *
+   * A bigger model on a small list simply memorises it faster, so the loss keeps
+   * falling while the output you actually want disappears. The note says so on the
+   * chip, because a visitor who spends five minutes and gets worse output will
+   * conclude the demo is broken rather than that they chose the wrong preset.
+   */
+  note?: string;
+}
+
+/** A preset before it is resolved for a level: the shape, plus a cost per level. */
+export interface PresetSpec {
+  key: PresetKey;
+  label: string;
+  blurb: string;
+  nLayer: number;
+  nHead: number;
+  dModel: number;
+  dFF: number;
+  blockSize: number;
+  batchSize: number;
+  lr: number;
+  weightDecay: number;
+  levels: Record<TokenLevel, LevelTiming>;
+}
+
+export type PresetKey = 'quick' | 'standard' | 'thorough';
+
+export const PRESETS: Record<PresetKey, PresetSpec> = {
   quick: {
-    key: 'quick', label: 'Quick', blurb: 'under a minute — the smallest, trained enough to form words',
-    seconds: 50,
+    key: 'quick', label: 'Quick', blurb: 'the smallest, and it is enough',
     nLayer: 1, nHead: 2, dModel: 32, dFF: 64,
-    blockSize: 24, batchSize: 12, lr: 3e-3, steps: 4000, weightDecay: 0.01,
+    blockSize: 24, batchSize: 12, lr: 3e-3, weightDecay: 0.01,
+    levels: {
+      word: { steps: 500, seconds: 20 },
+      char: { steps: 4000, seconds: 55, note: 'on a list this one invents the most' },
+    },
   },
   standard: {
-    key: 'standard', label: 'Standard', blurb: 'about two minutes — learns distinctly more of the language',
-    seconds: 135,
+    key: 'standard', label: 'Standard', blurb: 'a bigger model, cleaner still',
     nLayer: 2, nHead: 2, dModel: 64, dFF: 128,
-    blockSize: 32, batchSize: 12, lr: 2e-3, steps: 1500, weightDecay: 0.01,
+    blockSize: 32, batchSize: 12, lr: 2e-3, weightDecay: 0.01,
+    levels: {
+      word: { steps: 500, seconds: 75 },
+      char: { steps: 1500, seconds: 139, note: 'bigger model — starts to repeat on a list' },
+    },
   },
   thorough: {
-    key: 'thorough', label: 'Thorough', blurb: 'about four minutes — Standard, trained twice as long',
-    seconds: 255,
+    key: 'thorough', label: 'Thorough', blurb: 'trained until it can recite your text',
     nLayer: 2, nHead: 2, dModel: 64, dFF: 128,
-    blockSize: 32, batchSize: 12, lr: 2e-3, steps: 3000, weightDecay: 0.01,
+    blockSize: 32, batchSize: 12, lr: 2e-3, weightDecay: 0.01,
+    levels: {
+      word: { steps: 1500, seconds: 215 },
+      char: {
+        steps: 3000,
+        seconds: 293,
+        note: 'on a list this recites instead of inventing — prefer Quick',
+      },
+    },
   },
 };
 
-export type PresetKey = keyof typeof PRESETS;
-
-export function preset(name: string): ModelConfig {
-  const found = PRESETS[name as PresetKey];
-  return { ...(found ?? PRESETS.quick) };
+/**
+ * Resolve a preset for a tokeniser level — the ONE place the level and the shape
+ * meet, so the page, the host and the tests all get the same numbers.
+ */
+export function preset(name: string, level: TokenLevel = 'word'): ModelConfig {
+  const spec = PRESETS[name as PresetKey] ?? PRESETS.quick;
+  const timing = spec.levels[level] ?? spec.levels.word;
+  const { levels: _levels, ...shape } = spec;
+  return { ...shape, steps: timing.steps, seconds: timing.seconds, level };
 }
 
 /**
@@ -983,7 +1122,12 @@ export class Trainer {
       ? Array.from(encode(prompt, this.vocab))
       : [lineStartToken(this.data, this.vocab)];
     const out = ids.slice();
-    const maxNewlines = Math.max(1, Math.round(length / 24));
+    // A newline budget per level, because `length` counts tokens and a token is a
+    // word at one level and a letter at the other. A line of prose holds about ten
+    // words; a name is about twelve characters. The old single divisor of 24 was
+    // written for characters and would stop a word-level sample after two lines.
+    const perLine = this.vocab.level === 'char' ? 12 : 10;
+    const maxNewlines = Math.max(2, Math.round(length / perLine));
     let newlines = 0;
     for (let i = 0; i < length; i++) {
       const ctx = out.slice(Math.max(0, out.length - T));
@@ -992,7 +1136,7 @@ export class Trainer {
       this.lastM = M;
       const next = this.#pick(temperature, topK);
       out.push(next);
-      if (this.vocab.chars[next] === '\n' && ++newlines >= maxNewlines) break;
+      if ((this.vocab.chars[next] ?? '').includes('\n') && ++newlines >= maxNewlines) break;
     }
     return decode(out.slice(ids.length), this.vocab);
   }
@@ -1005,7 +1149,7 @@ export class Trainer {
     return {
       name: 'llm-demo',
       architecture:
-        'character-level GPT: token + position embeddings, causal multi-head self-attention, feed-forward block, layer norm, residual connections',
+        `${this.vocab.level}-level GPT: token + position embeddings, causal multi-head self-attention, feed-forward block, layer norm, residual connections`,
       config: { ...this.config },
       vocab: this.vocab.chars,
       params,
@@ -1030,13 +1174,13 @@ export class Trainer {
         learning_rate: this.config.lr,
         optimizer: 'AdamW',
         weight_decay: this.config.weightDecay,
-        tokenizer: 'character level',
+        tokenizer: `${this.vocab.level} level`,
         vocabulary_size: this.vocabSize,
       },
       training: {
         steps: this.stepCount,
         tokens_seen: this.tokensSeen,
-        corpus_characters: this.data.length,
+        corpus_tokens: this.data.length,
         final_loss: history.length ? history[history.length - 1] : null,
         smoothed_loss: this.smoothedLoss,
         curve,

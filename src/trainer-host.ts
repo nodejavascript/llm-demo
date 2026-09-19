@@ -13,7 +13,7 @@
  */
 
 import { Trainer, buildVocab, encode, preset, parameterCount, plannedSteps } from './llm.js';
-import type { ExportedWeights, ModelConfig, TrainingReport, Vocab } from './llm.js';
+import type { ExportedWeights, ModelConfig, TokenLevel, TrainingReport, Vocab } from './llm.js';
 
 const SLICE_MS = 40;
 const now = (): number => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -72,7 +72,10 @@ export interface StartedMessage {
   corpusCharacters: number;
   truncated: boolean;
   vocabularySize: number;
-  characters: string;
+  /** The vocabulary itself, so the page can show what it learned: words, or characters. */
+  vocabulary: string;
+  /** Which tokeniser the text called for — decided by `buildVocab`, not the visitor. */
+  level: TokenLevel;
   parameters: number;
   config: ModelConfig & { context: number; vocabularySize: number };
 }
@@ -173,7 +176,9 @@ export class LlmHost {
     }
     const vocab: Vocab = buildVocab(trimmed);
     const data = encode(trimmed, vocab);
-    const config = preset(presetKey);
+    // The preset's step count and time are resolved FOR THE LEVEL THE TEXT PICKED —
+    // a character run needs many more steps than a word run to reach the same point.
+    const config = preset(presetKey, vocab.level);
     if (steps) config.steps = Math.max(1, Math.floor(steps));
     const chosenSeed = seed === null || seed === undefined ? (Date.now() >>> 0) % 1e9 : seed;
 
@@ -194,7 +199,14 @@ export class LlmHost {
       corpusCharacters: trimmed.length,
       truncated: trimmed.length !== text.length,
       vocabularySize: vocab.size,
-      characters: vocab.chars.filter((c) => c !== '\uFFFD').join(''),
+      vocabulary:
+        vocab.level === 'char'
+          ? vocab.chars.join('')
+          : vocab.chars
+              .filter((c) => c !== '')
+              .map((c) => c.trim())
+              .join(' '),
+      level: vocab.level,
       parameters: this.trainer.paramCount,
       config: { ...config, context: this.trainer.T, vocabularySize: vocab.size },
     });

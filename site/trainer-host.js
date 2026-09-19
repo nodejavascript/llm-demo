@@ -37,7 +37,9 @@ export class LlmHost {
         }
         const vocab = buildVocab(trimmed);
         const data = encode(trimmed, vocab);
-        const config = preset(presetKey);
+        // The preset's step count and time are resolved FOR THE LEVEL THE TEXT PICKED —
+        // a character run needs many more steps than a word run to reach the same point.
+        const config = preset(presetKey, vocab.level);
         if (steps)
             config.steps = Math.max(1, Math.floor(steps));
         const chosenSeed = seed === null || seed === undefined ? (Date.now() >>> 0) % 1e9 : seed;
@@ -56,7 +58,13 @@ export class LlmHost {
             corpusCharacters: trimmed.length,
             truncated: trimmed.length !== text.length,
             vocabularySize: vocab.size,
-            characters: vocab.chars.filter((c) => c !== '\uFFFD').join(''),
+            vocabulary: vocab.level === 'char'
+                ? vocab.chars.join('')
+                : vocab.chars
+                    .filter((c) => c !== '')
+                    .map((c) => c.trim())
+                    .join(' '),
+            level: vocab.level,
             parameters: this.trainer.paramCount,
             config: { ...config, context: this.trainer.T, vocabularySize: vocab.size },
         });

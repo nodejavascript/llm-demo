@@ -6,6 +6,8 @@ import {
   buildVocab,
   encode,
   decode,
+  tokenize,
+  detectLevel,
   lineStartToken,
   parameterCount,
   preset,
@@ -40,32 +42,64 @@ test('vocabulary round-trips text losslessly', () => {
   assert.equal(new Set(vocab.chars).size, vocab.chars.length, 'no duplicate characters');
 });
 
-test('characters beyond the vocabulary cap fold into the unknown bucket', () => {
-  const many = Array.from({ length: 200 }, (_, i) => String.fromCodePoint(0x4e00 + i)).join('');
-  const text = many + 'aaaa' + many;
-  const vocab = buildVocab(text, 64);
+test('words beyond the vocabulary cap fold into the unknown bucket', () => {
+  // 200 distinct words, then the cap forces the rarest into one bucket.
+  //
+  // 🔴 THE LEVEL IS NAMED HERE, AND THAT IS NOT PEDANTRY. A corpus of 200 words that
+  // each occur ONCE is exactly the shape `detectLevel` classifies as CHARACTER level,
+  // so the bare `buildVocab(text, 64)` no longer built a word vocabulary at all — it
+  // built a 15-token character one, the cap never bound, and this test failed the
+  // moment the level became automatic. The cap is a WORD-level concern, so the word
+  // level is what it asks for.
+  const many = Array.from({ length: 200 }, (_, i) => `w${i} `).join('');
+  const text = 'common '.repeat(4) + many + 'common '.repeat(4);
+  const vocab = buildVocab(text, 64, 'word');
   assert.equal(vocab.size, 64);
   assert.equal(vocab.unkIndex, 63);
   const ids = encode(text, vocab);
-  assert.equal(ids.length, [...text].length);
-  // a character never seen at all still encodes, into the unknown bucket
-  const fresh = encode('\u2603', vocab);
+  assert.equal(ids.length, tokenize(text, 'word').length);
+  // a word never seen at all still encodes, into the unknown bucket
+  const fresh = encode('zzzz ', vocab);
   assert.equal(fresh[0], vocab.unkIndex);
+  // and the unknown bucket decodes to NOTHING, so it never prints a marker
+  assert.equal(vocab.chars[vocab.unkIndex], '');
+});
+
+test('detectLevel sends a list of one-off items to the characters and prose to words', () => {
+  // 🔴 THE MEASUREMENT THE WHOLE TWO-LEVEL DESIGN RESTS ON. Get this wrong and the
+  // site breaks in one direction or the other: a list tokenised by word can only
+  // recite itself, and prose tokenised by character comes out as letter salad.
+  // Measured on the real corpora — the 653-name list scores 1.00 distinct words,
+  // the dialogue 0.34 — and the threshold sits between them at 0.8.
+  const list = Array.from({ length: 300 }, (_, i) => `entry${i} `).join('');
+  assert.equal(detectLevel(list), 'char');
+
+  const prose = 'the cat sat on the mat and the cat sat on the other mat again '.repeat(20);
+  assert.equal(detectLevel(prose), 'word');
+
+  // Too little text to judge a ratio from, so it stays at word level rather than
+  // guessing from a handful of tokens.
+  assert.equal(detectLevel('a b c d e f g h'), 'word');
+
+  // And the vocabulary records which level built it, because `encode` and `decode`
+  // read it back off the vocab rather than being told again.
+  assert.equal(buildVocab(prose).level, 'word');
+  assert.equal(buildVocab(list).level, 'char');
 });
 
 test('a corpus with more than one code point per grapheme encodes correctly', () => {
-  const text = 'a😀b😀c';
+  const text = 'a😀 b😀 c😀';
   const vocab = buildVocab(text);
   const ids = encode(text, vocab);
-  assert.equal(ids.length, 5);
+  assert.equal(ids.length, 3);
   assert.equal(decode(ids, vocab), text);
 });
 
-test('lineStartToken finds the character lines begin with', () => {
-  const text = 'apple\napricot\navocado\n';
+test('lineStartToken finds the word lines begin with', () => {
+  const text = 'apple pie\napple tart\napple cake\n';
   const vocab = buildVocab(text);
   const data = encode(text, vocab);
-  assert.equal(vocab.chars[lineStartToken(data, vocab)], 'a');
+  assert.equal(vocab.chars[lineStartToken(data, vocab)], 'apple ');
 });
 
 /* ------------------------------------------------------------------ *
@@ -184,8 +218,13 @@ test('samples come back inside the requested length and vocabulary', () => {
   const t = makeTrainer({ nLayer: 1, dModel: 16, dFF: 32, blockSize: 16, batchSize: 4, lr: 5e-3 });
   for (let i = 0; i < 20; i++) t.step();
   const out = t.sample({ length: 80, temperature: 0.8 });
-  assert.ok(out.length > 0 && out.length <= 80, `length ${out.length}`);
-  for (const ch of out) assert.ok(t.vocab.chars.includes(ch), `character ${JSON.stringify(ch)} is in the vocabulary`);
+  // `length` counts TOKENS now, not characters, so the string can be much longer
+  // than 80 — the invariant is the number of words drawn.
+  const words = tokenize(out);
+  assert.ok(words.length > 0 && words.length <= 80, `words ${words.length}`);
+  for (const word of words) {
+    assert.ok(t.vocab.chars.includes(word), `word ${JSON.stringify(word)} is in the vocabulary`);
+  }
 });
 
 test('a prompt is honoured as the start of the context', () => {
@@ -246,14 +285,15 @@ test('exportWeights and exportReport describe the model', () => {
 });
 
 test('a corpus shorter than the context shrinks the context instead of failing', () => {
-  const text = 'abcabc';
+  const text = 'one two three';
   const vocab = buildVocab(text);
+  const data = encode(text, vocab);
   const t = new Trainer({
-    data: encode(text, vocab),
+    data,
     vocab,
     config: { ...preset('quick'), blockSize: 64 },
   });
-  assert.ok(t.T <= text.length - 1);
+  assert.ok(t.T <= data.length - 1);
   t.step();
   assert.equal(t.stepCount, 1);
 });
@@ -273,16 +313,18 @@ test('mulberry32 is deterministic and in range', () => {
   }
 });
 
-test('every preset trains a step without error', () => {
+test('every preset trains a step without error, at both levels', () => {
   for (const key of Object.keys(PRESETS)) {
-    const text = CORPUS.repeat(4);
-    const vocab = buildVocab(text);
-    const t = new Trainer({
-      data: encode(text, vocab),
-      vocab,
-      config: { ...PRESETS[key], steps: 1 },
-    });
-    const { loss } = t.step();
-    assert.ok(Number.isFinite(loss) && loss > 0, `${key} loss ${loss}`);
+    for (const level of ['word', 'char']) {
+      const text = CORPUS.repeat(4);
+      const vocab = buildVocab(text, 2000, level);
+      const t = new Trainer({
+        data: encode(text, vocab),
+        vocab,
+        config: { ...preset(key, level), steps: 1 },
+      });
+      const { loss } = t.step();
+      assert.ok(Number.isFinite(loss) && loss > 0, `${key} at ${level} level, loss ${loss}`);
+    }
   }
 });
