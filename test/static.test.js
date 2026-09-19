@@ -112,6 +112,23 @@ test('titles and descriptions are inside the house limits', () => {
   );
 });
 
+test('the document title carries the subdomain and the domain', () => {
+  // George, 19 Sep 2026: "the document title should be the sub and domain name".
+  //
+  // The title used to end in a bare product label ("| llm-demo"), which names
+  // neither the subdomain nor the domain. On a site whose identity IS its origin —
+  // nine sibling subdomains, one per app — a reader looking at a tab, a bookmark or
+  // a share card has to be able to tell WHICH site this is, so the title carries the
+  // host. The two limits fight: the house title cap is 60 characters and the host
+  // alone is 27, which leaves 30 for the description. That is why the wording is
+  // "Train a small language model" and not the longer <h1> — measured, not guessed.
+  const title = html.match(/<title>([^<]*)<\/title>/)[1];
+  const host = new URL(CANONICAL).host;
+  assert.ok(title.includes(host), `the title must contain the host ${host}: ${title}`);
+  const siteName = html.match(/<meta\s+property="og:site_name"\s+content="([^"]*)"/)[1];
+  assert.equal(siteName, host, `og:site_name should be the host, not a product label: ${siteName}`);
+});
+
 test('canonical, social tags, one h1 and valid JSON-LD', () => {
   assert.ok(html.includes(`<link rel="canonical" href="${CANONICAL}"`), 'self-referencing canonical');
   for (const tag of ['og:title', 'og:description', 'og:image', 'og:url', 'og:type', 'twitter:card', 'twitter:image']) {
