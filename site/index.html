@@ -159,7 +159,7 @@
           <li><b>Seconds, not hours.</b> About thirteen thousand to three hundred and thirty thousand parameters, depending on how long your text is, trained on your own machine in about twenty seconds to five minutes.</li>
           <li>
             <b>Read all of it.</b> <a href="./llm.js">The compiled model</a>, and the
-            <a href="https://github.com/nodejavascript/llm-demo">TypeScript it is built from</a>.
+            <a href="https://github.com/nodejavascript/llm-demo"><svg class="gh-star" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.4l2.9 6.1 6.7.9-4.9 4.7 1.2 6.6L12 17.6 6.1 20.7l1.2-6.6L2.4 9.4l6.7-.9z"/></svg>TypeScript it is built from</a>.
           </li>
         </ul>
       </section>
@@ -425,16 +425,17 @@
               <span class="consentDot" aria-hidden="true"></span><span id="consentAnalyticsWord">Off</span>
             </button>
           </li>
-          <li class="consentRow" id="consentDeviceRow" hidden>
-            <div>
-              <p class="consentRowName">This device</p>
-              <p class="consentRowWhy">
-                Leaves your own visits out of the numbers whatever the choice above says — it is how the person who
-                runs this site stays out of their own count.
-              </p>
-            </div>
-            <a id="countToggle" class="linkish" href="/?ga=off">Stop counting my visits</a>
-          </li>
+          <!-- 🔴 THE OWNER'S "THIS DEVICE / COUNT MY VISITS" ROW STOOD HERE AND IS GONE
+               (21 September 2026), applying George's rule of 19 September 2026: *"new rule i
+               dont want count my visits in the cookie settings"*. The panel names ONE choice;
+               the owner's switch belongs in the address bar, where a visitor has no reason to
+               look and no business to see it. `?ga=off` / `?ga=on` are unchanged.
+
+               NOTE, because this file matters: THIS IS THE REFERENCE every other site is
+               ported from, and carrying the row here is exactly how it reached the apex,
+               `rag-demo`, `inputresponse.com` and `datasets-demo`. All were corrected the
+               same day, and the compliance checker now fails on the row rather than
+               reporting a pass — a rule that is measured but not enforced is a record. -->
         </ul>
       </div>
 
@@ -491,7 +492,7 @@
       <p class="footer-links">
         <a href="./llm.js">The compiled model</a> ·
         <a href="#privacy">Privacy</a> ·
-        <a href="https://github.com/nodejavascript/llm-demo" rel="noopener">github.com/nodejavascript/llm-demo</a> ·
+        <a href="https://github.com/nodejavascript/llm-demo" rel="noopener"><svg class="gh-star" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M12 2.4l2.9 6.1 6.7.9-4.9 4.7 1.2 6.6L12 17.6 6.1 20.7l1.2-6.6L2.4 9.4l6.7-.9z"/></svg>github.com/nodejavascript/llm-demo</a> ·
         <button id="consentBtn" class="linkish" type="button">Cookie settings</button>
       </p>
       <p class="footer-copy">© 2026 llm-demo.nodejavascript.com. All rights reserved.</p>

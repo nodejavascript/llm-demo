@@ -698,6 +698,21 @@ a:hover {
 .footer-links {
   margin: 6px 0;
 }
+
+/* 🔴 THE TINY YELLOW STAR ON EVERY GITHUB LINK — part 4b of the nodejavascript site standard.
+   The star takes the page's own yellow (`--yellow`) and the label does NOT: a yellow star beside a
+   yellow label is the misreading the rule names. `display: inline-block` is load-bearing, because
+   a global `svg { display: block }` would drop the star onto a line of its own. */
+.gh-star {
+  display: inline-block;
+  width: 0.85em;
+  height: 0.85em;
+  margin-right: 5px;
+  flex: none;
+  fill: var(--yellow);
+  vertical-align: -0.05em;
+}
+
 .footer-copy {
   margin: 10px 0 0;
   font-size: 12.5px;
