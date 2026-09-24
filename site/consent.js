@@ -189,17 +189,12 @@
      * the whole reason it is a row at all: turning counting off from the address
      * bar and having to retype the address to undo it was a dead end.
      */
-    function wordCountSwitch() {
-        var off = ownerOptedOut();
-        var row = document.getElementById('consentDeviceRow');
-        if (row)
-            row.hidden = !off;
-        var link = document.getElementById('countToggle');
-        if (!link)
-            return;
-        link.textContent = off ? 'Count my visits' : 'Stop counting my visits';
-        link.setAttribute('href', off ? '/?ga=on' : '/?ga=off');
-    }
+    // 🔴 THE OWNER ROW AND THE FOOTER COUNTING LINK ARE GONE FROM THE PAGE, SO THE CODE THAT
+    // WIRED THEM IS GONE TOO (24 September 2026). The panel now names ONE choice — the visitor's
+    // switch — because a second way to opt out sitting under the first was the same answer twice
+    // (house rule, 19 Sep 2026), and the footer keeps the one door: `#consentBtn`. The owner's own
+    // switch is still the address bar — `?ga=off` / `?ga=on` — and since 24 September the owner's
+    // whole network is excluded at the edge, so no in-page control is needed at all.
     var bar = null;
     /**
      * Reserve the banner's own height at the bottom of the page.
@@ -421,7 +416,7 @@
     applyOwnerSwitch();
     // After the switch is applied, so the words match the state the reader is about
     // to be in rather than the one they arrived with.
-    wordCountSwitch();
+    // wordCountSwitch() is gone with the controls it wired — see the note above.
     start();
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', build);

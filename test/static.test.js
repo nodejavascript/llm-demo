@@ -383,7 +383,9 @@ test('the panel names the purpose and its switch ships off', () => {
   assert.match(html, /href="#privacy"/, 'the ask links to the Privacy section rather than carrying it all');
   assert.match(html, /id="privacy"/, 'and that link must resolve to a real section');
   assert.match(html, /id="cookies"/, 'which must itself name the cookies');
-  assert.match(html, /id="consentDeviceRow"[^>]*hidden/, 'the owner row stays out of sight until it is used');
+  // The owner row is deliberately NOT in the panel any more (house rule, 19 Sep 2026: the panel
+  // names ONE choice), and the owner's own switch is the address bar — so asserting its id here
+  // demanded a control the standard forbids. Removed 24 September 2026.
   assert.match(html, /id="consentBtn"/, 'the footer keeps one door to change the answer');
 });
 
