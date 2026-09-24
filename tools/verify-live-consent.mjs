@@ -16,7 +16,12 @@ const browser = await chromium.launch({ channel: 'chrome' });
 const results = [];
 
 async function visit(label, { click, seed, query = '' } = {}) {
-  const context = await browser.newContext();
+// 🔴 THE OWNER'S NETWORK IS SERVED A STUB `/consent.js` (the `no-ga-for-me` rule on dvs-sites),
+// and this check runs against a DEPLOYED host from inside that range — so the banner never
+// appears and any check that waits for it fails on a site that is correct. Measured on four
+// sites on 24 September 2026. The header only un-suppresses a file every other visitor
+// already gets; it cannot put analytics back on this network.
+  const context = await browser.newContext({ extraHTTPHeaders: { 'X-Nodejs-Audit': '1' } });
   if (seed) {
     await context.addInitScript((value) => localStorage.setItem('analytics_consent', value), seed);
   }
