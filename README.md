@@ -113,7 +113,7 @@ the only thing that differed:
 | | loss | output |
 |---|---|---|
 | character level | 1.278 | *"itical web automatily, and Go, AnfuxP stomatttts"* |
-| **word level** | **0.081** | *"FIELDER / Senior Software Engineer, Full Stack / Hamilton, Ontario, Canada / <contact address>"* |
+| **word level** | **0.081** | *"FIELDER / Senior Software Engineer, Full Stack / <city>, Ontario, Canada / <contact address>"* |
 
 So it was switched to words. **And that broke the other half of the site**, which the
 measurement caught: the DEFAULT corpus is a list of six hundred given names, and on a

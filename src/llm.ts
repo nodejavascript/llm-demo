@@ -150,7 +150,7 @@ function splitChars(text: string): string[] {
  *
  *   character level  loss 1.278   "itical web automatily, and Go, AnfuxP stomatttts"
  *   word level       loss 0.081   "FIELDER / Senior Software Engineer, Full Stack /
- *                                  Hamilton, Ontario, Canada / <contact address>"
+ *                                  <city>, Ontario, Canada / <contact address>"
  *
  * So it was switched to words. **And that broke the other half of the site**, which
  * the measurement caught: the DEFAULT corpus is a list of six hundred given names,
