@@ -468,7 +468,7 @@ test('every control that starts disabled is enabled again by the script', () => 
 
 test('nothing in site/ is a stray working file', () => {
   const allowed = new Set([
-    'index.html', 'styles.css', 'app.js', 'consent.js', 'llm.js', 'trainer-host.js', 'trainer.worker.js', 'corpora.js',
+    'index.html', 'styles.css', 'app.js', 'consent.js', 'llm.js', 'trainer-host.js', 'trainer.worker.js', 'corpora.js', 'rollbar.js',
     'manifest.webmanifest', 'robots.txt', 'sitemap.xml', 'og.png',
     'favicon.ico', 'favicon.svg', 'favicon-32.png', 'apple-touch-icon.png',
     'android-chrome-192x192.png', 'android-chrome-512x512.png',
