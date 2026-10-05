@@ -56,7 +56,13 @@ body {
 }
 
 html {
-  background: var(--bg);
+  /* 🔴 NO BACKGROUND HERE, AND THAT IS THE FIX. `.dvs-pattern` sits at z-index:-1, which paints
+     AFTER the root background but BEFORE the backgrounds of in-flow blocks. While `html` carried a
+     background, `body`'s own background was an ordinary ELEMENT background and covered the hatch
+     completely — measured on the rendered page on 5 October 2026, hiding the layer changed
+     NOTHING above y≈1000 and the drawing appeared only in the band where body's gradient had
+     faded. With no background on `html`, `body`'s background is propagated to the CANVAS and
+     painted first, so the drawing shows everywhere the content does not sit. */
   scroll-behavior: smooth;
 }
 
@@ -90,10 +96,15 @@ body {
   inset: 0;
   z-index: -1;
   pointer-events: none;
+  /* 🔴 0.07 AND A 1px STROKE WAS NOT A DRAWING. Measured on the rendered page on 5 October 2026:
+     a violet line at 7% alpha on a #0b0714 ground is about three grey levels, and a 1px line every
+     34px touches 3% of the page. The page was flat dark to a visitor while the CSS looked perfect —
+     the same fault the record rooms had. The hatch is kept and now reads: a 2px line every 30px at
+     0.30. */
   background-image: repeating-linear-gradient(
     45deg,
-    rgba(139, 92, 246, 0.07) 0 1px,
-    rgba(0, 0, 0, 0) 1px 34px
+    rgba(139, 92, 246, 0.30) 0 2px,
+    rgba(0, 0, 0, 0) 2px 30px
   );
   -webkit-mask-image: radial-gradient(122% 82% at 50% 0%, #000 18%, rgba(0, 0, 0, 0) 82%);
   mask-image: radial-gradient(122% 82% at 50% 0%, #000 18%, rgba(0, 0, 0, 0) 82%);
